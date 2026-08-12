@@ -58,7 +58,7 @@ export async function listDeliveries(query, user) {
   if (query.driver && ['admin', 'manager'].includes(user.role)) filter.assignedDriver = query.driver;
   if (query.from || query.to) filter.createdAt = { ...(query.from && { $gte: new Date(query.from) }), ...(query.to && { $lte: new Date(query.to) }) };
   if (query.search) filter.$text = { $search: query.search };
-  if (query.cursor) filter._id = { $lt: query.cursor };
+  if (query.cursor) filter._id = { [query.sort === 'oldest' ? '$gt' : '$lt']: query.cursor };
   const limit = query.limit ?? 20;
   const items = await Delivery.find(filter)
     .populate('customer', 'name email')
