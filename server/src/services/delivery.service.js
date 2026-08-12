@@ -14,8 +14,8 @@ const transitionRules = {
   [DELIVERY_STATUS.ASSIGNED]: { accepted: ['driver'], cancelled: ['manager', 'admin'], rescheduled: ['manager', 'admin'] },
   [DELIVERY_STATUS.ACCEPTED]: { picked_up: ['driver'], cancelled: ['manager', 'admin'], rescheduled: ['manager', 'admin'] },
   [DELIVERY_STATUS.PICKED_UP]: { in_transit: ['driver'], failed: ['driver', 'manager', 'admin'] },
-  [DELIVERY_STATUS.IN_TRANSIT]: { delivered: ['driver'], failed: ['driver', 'manager', 'admin'] },
-  [DELIVERY_STATUS.RESCHEDULED]: { assigned: ['manager', 'admin'], cancelled: ['manager', 'admin'] },
+  [DELIVERY_STATUS.IN_TRANSIT]: { failed: ['driver', 'manager', 'admin'] },
+  [DELIVERY_STATUS.RESCHEDULED]: { cancelled: ['manager', 'admin'] },
   [DELIVERY_STATUS.DELIVERED]: {},
   [DELIVERY_STATUS.CANCELLED]: {},
   [DELIVERY_STATUS.FAILED]: { rescheduled: ['manager', 'admin'] }
@@ -125,7 +125,12 @@ export async function transitionDelivery(deliveryId, input, actor, requestId) {
   delivery.status = input.status;
   delivery.history.push({ status: input.status, actor: actor._id, note: input.note });
   await delivery.save();
-  if (['delivered', 'failed', 'cancelled'].includes(input.status)) await releaseResources(delivery);
+  if (['delivered', 'failed', 'cancelled', 'rescheduled'].includes(input.status)) await releaseResources(delivery);
+  if (input.status === DELIVERY_STATUS.RESCHEDULED) {
+    delivery.assignedDriver = null;
+    delivery.assignedVehicle = null;
+    await delivery.save();
+  }
   await recordAudit({ actor: actor._id, action: input.status === 'cancelled' ? 'delivery.cancelled' : 'delivery.status_changed', entityType: 'Delivery', entityId: delivery._id, metadata: { status: input.status }, requestId });
   emitDeliveryUpdate(delivery);
   return delivery;

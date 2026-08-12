@@ -15,6 +15,5 @@ deliveryRouter.get('/', validate({ query: listDeliveryQuery }), asyncHandler(con
 deliveryRouter.post('/', authorize('customer', 'manager', 'admin'), validate({ body: createDeliveryBody }), asyncHandler(controller.create));
 deliveryRouter.get('/:id', validate({ params: deliveryIdParams }), asyncHandler(controller.get));
 deliveryRouter.post('/:id/assign', authorize('manager', 'admin'), validate({ params: deliveryIdParams, body: assignBody }), asyncHandler(controller.assign));
-deliveryRouter.patch('/:id/status', authorize('driver', 'manager', 'admin'), validate({ params: deliveryIdParams, body: transitionBody }), asyncHandler(controller.transition));
+deliveryRouter.patch('/:id/status', authorize('customer', 'driver', 'manager', 'admin'), validate({ params: deliveryIdParams, body: transitionBody }), asyncHandler(controller.transition));
 deliveryRouter.post('/:id/proof', authorize('driver'), upload.single('image'), validate({ params: deliveryIdParams, body: proofBody }), asyncHandler(controller.proof));
-
