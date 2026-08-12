@@ -32,11 +32,13 @@ export function deliveryScope(user) {
 export async function createDelivery(input, actor, requestId) {
   const customer = actor.role === 'customer' ? actor._id : input.customer;
   if (!customer) throw new AppError(422, 'CUSTOMER_REQUIRED', 'A customer is required');
+  const { deliveryOtp, ...deliveryInput } = input;
   const delivery = await Delivery.create({
-    ...input,
+    ...deliveryInput,
     customer,
     trackingNumber: trackingNumber(),
     status: DELIVERY_STATUS.PENDING,
+    proof: { otpHash: await bcrypt.hash(deliveryOtp, 10) },
     history: [{ status: DELIVERY_STATUS.PENDING, note: 'Delivery request created', actor: actor._id }]
   });
   await recordAudit({ actor: actor._id, action: 'delivery.created', entityType: 'Delivery', entityId: delivery._id, requestId });
@@ -140,7 +142,8 @@ export async function submitProof(deliveryId, input, actor, requestId) {
   const delivery = await getAuthorizedDelivery(deliveryId, actor);
   if (delivery.status !== DELIVERY_STATUS.IN_TRANSIT) throw new AppError(409, 'INVALID_STATUS_TRANSITION', 'Proof can only be submitted for an in-transit delivery');
   const full = await Delivery.findById(deliveryId).select('+proof.otpHash');
-  if (full.proof?.otpHash && !(await bcrypt.compare(input.otp, full.proof.otpHash))) throw new AppError(422, 'INVALID_DELIVERY_OTP', 'The delivery verification code is incorrect');
+  if (!full.proof?.otpHash) throw new AppError(409, 'DELIVERY_OTP_NOT_CONFIGURED', 'This delivery does not have a verification code');
+  if (!(await bcrypt.compare(input.otp, full.proof.otpHash))) throw new AppError(422, 'INVALID_DELIVERY_OTP', 'The delivery verification code is incorrect');
   delivery.status = DELIVERY_STATUS.DELIVERED;
   delivery.proof = { recipientName: input.recipientName, deliveredAt: new Date(), driverNotes: input.driverNotes, imagePath: input.imagePath };
   delivery.history.push({ status: DELIVERY_STATUS.DELIVERED, actor: actor._id, note: `Received by ${input.recipientName}` });

@@ -53,10 +53,16 @@ const deliverySchema = new mongoose.Schema({
   delayedNotifiedAt: Date
 }, { timestamps: true, optimisticConcurrency: true });
 
+deliverySchema.set('toJSON', {
+  transform: (_document, result) => {
+    if (result.proof) delete result.proof.otpHash;
+    return result;
+  }
+});
+
 deliverySchema.index({ customer: 1, createdAt: -1 });
 deliverySchema.index({ status: 1, priority: 1, expectedDeliveryAt: 1 });
 deliverySchema.index({ assignedDriver: 1, status: 1 });
 deliverySchema.index({ packageDescription: 'text', trackingNumber: 'text' });
 
 export const Delivery = mongoose.model('Delivery', deliverySchema);
-

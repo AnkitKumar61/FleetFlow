@@ -12,7 +12,8 @@ export const createDeliveryBody = z.object({
   customer: objectId.optional(), pickupAddress: address, deliveryAddress: address,
   packageDescription: z.string().trim().min(3).max(300), packageWeightKg: z.coerce.number().positive().max(50000),
   priority: z.enum(['standard', 'express', 'urgent']).default('standard'),
-  expectedDeliveryAt: z.coerce.date().refine((date) => date > new Date(), 'Expected delivery must be in the future')
+  expectedDeliveryAt: z.coerce.date().refine((date) => date > new Date(), 'Expected delivery must be in the future'),
+  deliveryOtp: z.string().trim().regex(/^\d{4,8}$/, 'Delivery OTP must contain 4 to 8 digits')
 });
 
 export const deliveryIdParams = z.object({ id: objectId });
@@ -24,4 +25,3 @@ export const listDeliveryQuery = z.object({
   driver: objectId.optional(), from: z.string().date().optional(), to: z.string().date().optional(), search: z.string().trim().max(100).optional(),
   cursor: objectId.optional(), limit: z.coerce.number().int().min(1).max(100).default(20), sort: z.enum(['newest', 'oldest']).default('newest')
 });
-
