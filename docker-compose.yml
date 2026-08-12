@@ -25,16 +25,27 @@ services:
     env_file: server/.env
     environment: { MONGODB_URI: "mongodb://mongo:27017/fleetflow?replicaSet=rs0", REDIS_URL: "redis://redis:6379" }
     ports: ["4000:4000"]
+    volumes: ["upload-data:/app/uploads"]
     depends_on: { mongo-init: { condition: service_completed_successfully }, redis: { condition: service_healthy } }
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:4000/ready"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
   worker:
     build: { context: ., target: server }
     command: ["node", "server/src/worker.js"]
     env_file: server/.env
     environment: { MONGODB_URI: "mongodb://mongo:27017/fleetflow?replicaSet=rs0", REDIS_URL: "redis://redis:6379" }
-    depends_on: { server: { condition: service_started } }
+    depends_on: { server: { condition: service_healthy } }
   client:
     build: { context: ., target: client }
     ports: ["8080:80"]
-    depends_on: [server]
-volumes: { mongo-data: {}, redis-data: {} }
-
+    depends_on: { server: { condition: service_healthy } }
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+volumes: { mongo-data: {}, redis-data: {}, upload-data: {} }

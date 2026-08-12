@@ -15,6 +15,7 @@ ENV NODE_ENV=production
 COPY --from=deps /app/node_modules node_modules
 COPY package*.json ./
 COPY server server
+RUN mkdir -p uploads && chown node:node uploads
 USER node
 EXPOSE 4000
 CMD ["node", "server/src/index.js"]
@@ -23,4 +24,3 @@ FROM nginx:1.27-alpine AS client
 COPY --from=client-build /app/client/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 EXPOSE 80
-
