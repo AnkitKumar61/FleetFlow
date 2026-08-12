@@ -11,4 +11,4 @@ uploads/
 .DS_Store
 .idea/
 .vscode/
-
+.vercel/
