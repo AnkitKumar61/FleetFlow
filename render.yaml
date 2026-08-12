@@ -15,7 +15,7 @@ services:
     repo: https://github.com/AnkitKumar61/FleetFlow
     branch: main
     buildCommand: npm ci
-    startCommand: npm run seed && npm run start -w server
+    startCommand: npm run start -w server
     healthCheckPath: /ready
     envVars:
       - key: NODE_ENV
