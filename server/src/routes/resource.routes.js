@@ -11,7 +11,7 @@ const createUserBody = z.object({
   email: z.string().trim().email().max(160),
   phone: z.string().trim().max(24).optional(),
   password: z.string().min(8).max(128).regex(/[A-Z]/, 'Include an uppercase letter').regex(/[0-9]/, 'Include a number'),
-  role: z.enum(['admin', 'driver', 'customer']),
+  role: z.enum(['admin', 'driver']),
   licenseNumber: z.string().trim().min(3).max(30).optional(),
   licenseExpiresAt: z.coerce.date().optional(),
   driverStatus: z.enum(['available', 'offline']).optional()

@@ -31,6 +31,13 @@ describe('resource management invariants', () => {
     expect(await User.findOne({ email: 'new-admin@example.com' })).toBeTruthy();
   });
 
+  it('requires customers to create their own account through sign up', async () => {
+    await request(app).post('/api/v1/users').set('Authorization', `Bearer ${token}`).send({
+      name: 'Customer', email: 'admin-created-customer@example.com', password: 'Password1', role: 'customer'
+    }).expect(422);
+    expect(await User.findOne({ email: 'admin-created-customer@example.com' })).toBeNull();
+  });
+
   it('creates a driver account and driver profile together', async () => {
     const response = await request(app).post('/api/v1/users').set('Authorization', `Bearer ${token}`).send({
       name: 'New Driver', email: 'new-driver@example.com', password: 'Password1', role: 'driver',
