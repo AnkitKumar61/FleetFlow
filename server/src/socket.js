@@ -3,6 +3,7 @@ import jwt from 'jsonwebtoken';
 import { env } from './config/env.js';
 import { User } from './models/user.js';
 import { Driver } from './models/driver.js';
+import { Delivery } from './models/delivery.js';
 import { setRealtimeServer } from './services/realtime.service.js';
 
 export function attachSocketServer(httpServer) {
@@ -20,13 +21,27 @@ export function attachSocketServer(httpServer) {
   io.on('connection', async (socket) => {
     socket.join(`user:${socket.user._id}`);
     socket.join(`role:${socket.user.role}`);
-    if (socket.user.role === 'driver') await Driver.updateOne({ user: socket.user._id, status: 'offline' }, { status: 'available' });
-    socket.on('delivery:watch', (id) => socket.join(`delivery:${id}`));
-    socket.on('disconnect', async () => {
-      if (socket.user.role === 'driver') await Driver.updateOne({ user: socket.user._id, status: 'available' }, { status: 'offline' });
+    if (socket.user.role === 'driver') {
+      await Driver.updateOne({ user: socket.user._id, status: 'offline' }, { status: 'available' });
+      socket.driver = await Driver.findOne({ user: socket.user._id }).select('_id');
+    }
+    socket.on('delivery:watch', async (id, acknowledge = () => {}) => {
+      try {
+        const delivery = await Delivery.findById(id).select('customer assignedDriver');
+        const canWatch = delivery && (
+          ['admin', 'manager'].includes(socket.user.role)
+          || (socket.user.role === 'customer' && delivery.customer.toString() === socket.user._id.toString())
+          || (socket.user.role === 'driver' && socket.driver && delivery.assignedDriver?.toString() === socket.driver._id.toString())
+        );
+        if (!canWatch) return acknowledge({ ok: false, error: 'FORBIDDEN' });
+        await socket.join(`delivery:${delivery._id}`);
+        return acknowledge({ ok: true });
+      } catch { return acknowledge({ ok: false, error: 'INVALID_DELIVERY' }); }
+    });
+    socket.on('disconnect', () => {
+      if (socket.user.role === 'driver') Driver.updateOne({ user: socket.user._id, status: 'available' }, { status: 'offline' }).catch(() => {});
     });
   });
   setRealtimeServer(io);
   return io;
 }
-

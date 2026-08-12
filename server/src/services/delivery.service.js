@@ -43,7 +43,7 @@ export async function createDelivery(input, actor, requestId) {
   });
   await recordAudit({ actor: actor._id, action: 'delivery.created', entityType: 'Delivery', entityId: delivery._id, requestId });
   scheduleDelayCheck(delivery).catch(() => {});
-  emitDeliveryUpdate(delivery);
+  await emitDeliveryUpdate(delivery);
   return delivery;
 }
 
@@ -114,12 +114,13 @@ export async function assignDelivery(deliveryId, input, actor, requestId) {
       await recordAudit({ actor: actor._id, action: 'delivery.assigned', entityType: 'Delivery', entityId: delivery._id, metadata: { driverId: driver._id, vehicleId: vehicle._id }, requestId, session });
     });
   } finally { await session.endSession(); }
-  emitDeliveryUpdate(assigned);
+  await emitDeliveryUpdate(assigned);
   return assigned;
 }
 
 export async function transitionDelivery(deliveryId, input, actor, requestId) {
   const delivery = await getAuthorizedDelivery(deliveryId, actor);
+  const assignedDriver = delivery.assignedDriver;
   const roles = transitionRules[delivery.status]?.[input.status];
   if (!roles?.includes(actor.role)) throw new AppError(409, 'INVALID_STATUS_TRANSITION', `Cannot move a delivery from ${delivery.status} to ${input.status}`);
   delivery.status = input.status;
@@ -132,7 +133,7 @@ export async function transitionDelivery(deliveryId, input, actor, requestId) {
     await delivery.save();
   }
   await recordAudit({ actor: actor._id, action: input.status === 'cancelled' ? 'delivery.cancelled' : 'delivery.status_changed', entityType: 'Delivery', entityId: delivery._id, metadata: { status: input.status }, requestId });
-  emitDeliveryUpdate(delivery);
+  await emitDeliveryUpdate(delivery, assignedDriver);
   return delivery;
 }
 
@@ -155,7 +156,7 @@ export async function submitProof(deliveryId, input, actor, requestId) {
   await delivery.save();
   await releaseResources(delivery);
   await recordAudit({ actor: actor._id, action: 'delivery.proof_submitted', entityType: 'Delivery', entityId: delivery._id, requestId });
-  emitDeliveryUpdate(delivery);
+  await emitDeliveryUpdate(delivery);
   return delivery;
 }
 
