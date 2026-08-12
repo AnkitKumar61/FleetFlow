@@ -57,7 +57,11 @@ export async function listDeliveries(query, user) {
   if (query.priority) filter.priority = query.priority;
   if (query.driver && ['admin', 'manager'].includes(user.role)) filter.assignedDriver = query.driver;
   if (query.from || query.to) filter.createdAt = { ...(query.from && { $gte: new Date(query.from) }), ...(query.to && { $lte: new Date(query.to) }) };
-  if (query.search) filter.$text = { $search: query.search };
+  if (query.search) {
+    const escapedSearch = query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const search = new RegExp(escapedSearch, 'i');
+    filter.$or = [{ trackingNumber: search }, { packageDescription: search }];
+  }
   if (query.cursor) filter._id = { [query.sort === 'oldest' ? '$gt' : '$lt']: query.cursor };
   const limit = query.limit ?? 20;
   const items = await Delivery.find(filter)
