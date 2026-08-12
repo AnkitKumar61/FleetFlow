@@ -30,6 +30,7 @@ export async function createDriver(req, res) {
   return ok(res, await driver.populate('user', 'name email phone'), null, 201);
 }
 export async function updateDriver(req, res) {
+  if (Object.hasOwn(req.body, 'isActive') && req.user.role !== 'admin') throw new AppError(403, 'FORBIDDEN', 'Only an admin can activate or deactivate a driver');
   const driver = await Driver.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true }).populate('user', 'name email phone');
   if (!driver) throw new AppError(404, 'DRIVER_NOT_FOUND', 'Driver not found');
   return ok(res, driver);
@@ -44,4 +45,3 @@ export async function updateVehicle(req, res) {
 }
 export async function listAudits(_req, res) { return ok(res, await AuditLog.find().populate('actor', 'name role').sort({ createdAt: -1 }).limit(100)); }
 export async function listNotifications(_req, res) { return ok(res, await Notification.find().sort({ createdAt: -1 }).limit(50)); }
-
