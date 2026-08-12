@@ -10,7 +10,7 @@ const Metric = ({ label, value, note, icon: Icon, tone }) => <div className={`me
 
 export default function DashboardPage() {
   const { user } = useAuth(); const [data, setData] = useState(null); const [deliveries, setDeliveries] = useState([]); const [error, setError] = useState(''); const [loading,setLoading]=useState(true);
-  const load = async () => { setError('');try { const requests = [api.get('/deliveries?limit=6')]; if (['admin','manager'].includes(user.role)) requests.push(api.get('/analytics/overview')); const [list, analytics] = await Promise.all(requests); setDeliveries(list.data.data); setData(analytics?.data.data ?? null); } catch (err) { setError(err.response?.data?.error?.message ?? 'Could not load current operations.'); } finally { setLoading(false); } };
+  const load = async () => { setError('');try { const requests = [api.get('/deliveries?limit=6')]; if (user.role === 'admin') requests.push(api.get('/analytics/overview')); const [list, analytics] = await Promise.all(requests); setDeliveries(list.data.data); setData(analytics?.data.data ?? null); } catch (err) { setError(err.response?.data?.error?.message ?? 'Could not load current operations.'); } finally { setLoading(false); } };
   useEffect(() => { load();window.addEventListener('fleetflow:data-changed',load);return()=>window.removeEventListener('fleetflow:data-changed',load); }, []);
   const heading = user.role === 'driver' ? 'Your delivery run' : user.role === 'customer' ? 'Your deliveries' : 'Today’s operating picture';
   if (error) return <ErrorState message={error} retry={load}/>;

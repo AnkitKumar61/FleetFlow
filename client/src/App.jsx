@@ -31,7 +31,7 @@ export function App() {
       <Route path="deliveries" element={<DeliveriesPage />} />
       <Route path="deliveries/new" element={<RequireRoles roles={['customer']}><NewDeliveryPage /></RequireRoles>} />
       <Route path="deliveries/:id" element={<DeliveryDetailPage />} />
-      <Route path="resources" element={<RequireRoles roles={['admin','manager']}><ResourcesPage /></RequireRoles>} />
+      <Route path="resources" element={<RequireRoles roles={['admin']}><ResourcesPage /></RequireRoles>} />
     </Route>
     <Route path="*" element={<Navigate to="/" replace />} />
   </Routes></Suspense>;

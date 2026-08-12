@@ -17,18 +17,18 @@ describe('resource management invariants', () => {
   });
 
   it('prevents an admin from changing their own role', async () => {
-    const response = await request(app).patch(`/api/v1/users/${admin._id}`).set('Authorization', `Bearer ${token}`).send({ role: 'manager' }).expect(409);
+    const response = await request(app).patch(`/api/v1/users/${admin._id}`).set('Authorization', `Bearer ${token}`).send({ role: 'customer' }).expect(409);
     expect(response.body.error.code).toBe('SELF_ROLE_CHANGE');
     expect((await User.findById(admin._id)).role).toBe('admin');
   });
 
-  it('allows an admin to create a manager account', async () => {
+  it('allows an admin to create another admin account', async () => {
     const response = await request(app).post('/api/v1/users').set('Authorization', `Bearer ${token}`).send({
-      name: 'New Manager', email: 'new-manager@example.com', password: 'Password1', role: 'manager'
+      name: 'New Admin', email: 'new-admin@example.com', password: 'Password1', role: 'admin'
     }).expect(201);
-    expect(response.body.data.user.role).toBe('manager');
+    expect(response.body.data.user.role).toBe('admin');
     expect(response.body.data.user.passwordHash).toBeUndefined();
-    expect(await User.findOne({ email: 'new-manager@example.com' })).toBeTruthy();
+    expect(await User.findOne({ email: 'new-admin@example.com' })).toBeTruthy();
   });
 
   it('creates a driver account and driver profile together', async () => {
@@ -42,9 +42,9 @@ describe('resource management invariants', () => {
     expect(profile.status).toBe('available');
   });
 
-  it('does not allow a manager to create staff accounts', async () => {
-    const manager = await User.create({ name: 'Manager', email: 'manager@example.com', role: 'manager', passwordHash: await User.hashPassword('Password1') });
-    const login = await request(app).post('/api/v1/auth/login').send({ email: manager.email, password: 'Password1' });
+  it('does not allow a driver to create staff accounts', async () => {
+    const driver = await User.create({ name: 'Driver', email: 'staff-driver@example.com', role: 'driver', passwordHash: await User.hashPassword('Password1') });
+    const login = await request(app).post('/api/v1/auth/login').send({ email: driver.email, password: 'Password1' });
     await request(app).post('/api/v1/users').set('Authorization', `Bearer ${login.body.data.accessToken}`).send({
       name: 'Blocked Admin', email: 'blocked@example.com', password: 'Password1', role: 'admin'
     }).expect(403);

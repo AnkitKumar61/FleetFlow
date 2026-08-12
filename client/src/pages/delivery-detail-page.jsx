@@ -8,10 +8,6 @@ import { ErrorState, Loading, PageHeader, StatusBadge, labelStatus } from '../co
 const nextDriverStatus = { assigned: 'accepted', accepted: 'picked_up', picked_up: 'in_transit' };
 const operationalTransitions = {
   customer: { pending: ['cancelled'] },
-  manager: {
-    pending: ['cancelled'], assigned: ['rescheduled', 'cancelled'], accepted: ['rescheduled', 'cancelled'],
-    picked_up: ['failed'], in_transit: ['failed'], failed: ['rescheduled'], rescheduled: ['cancelled']
-  },
   admin: {
     pending: ['cancelled'], assigned: ['rescheduled', 'cancelled'], accepted: ['rescheduled', 'cancelled'],
     picked_up: ['failed'], in_transit: ['failed'], failed: ['rescheduled'], rescheduled: ['cancelled']
@@ -41,7 +37,7 @@ export default function DeliveryDetailPage() {
   useEffect(() => {
     load();
     window.addEventListener('fleetflow:data-changed', load);
-    if (['manager', 'admin'].includes(user.role)) {
+    if (user.role === 'admin') {
       Promise.all([api.get('/drivers'), api.get('/vehicles')]).then(([driverData, vehicleData]) => {
         setDrivers(driverData.data.data.filter((item) => item.isActive && item.status === 'available'));
         setVehicles(vehicleData.data.data.filter((item) => item.isActive && item.status === 'available'));
@@ -123,7 +119,7 @@ export default function DeliveryDetailPage() {
         <div><dt>Expected</dt><dd>{new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(delivery.expectedDeliveryAt))}</dd></div>
       </dl></aside>
     </section>
-    {['manager', 'admin'].includes(user.role) && ['pending', 'rescheduled'].includes(delivery.status) && <form className="action-panel" onSubmit={assign}>
+    {user.role === 'admin' && ['pending', 'rescheduled'].includes(delivery.status) && <form className="action-panel" onSubmit={assign}>
       <div><h2>Assign resources</h2><p>{drivers.length ? 'Only currently available and capable resources can be reserved.' : 'No drivers are currently available. Release or activate a driver before assigning.'}</p></div>
       <label>Driver<select required value={assignment.driverId} onChange={(event) => setAssignment({ ...assignment, driverId: event.target.value })}><option value="">Select available driver</option>{drivers.map((driver) => <option key={driver._id} value={driver._id}>{driver.user.name}</option>)}</select></label>
       <label>Vehicle<select required value={assignment.vehicleId} onChange={(event) => setAssignment({ ...assignment, vehicleId: event.target.value })}><option value="">Select available vehicle</option>{vehicles.filter((vehicle) => vehicle.capacityKg >= delivery.packageWeightKg).map((vehicle) => <option key={vehicle._id} value={vehicle._id}>{vehicle.registrationNumber} · {vehicle.capacityKg} kg</option>)}</select></label>

@@ -10,21 +10,21 @@ import { emitDeliveryUpdate } from './realtime.service.js';
 import { scheduleDelayCheck } from './queue.service.js';
 
 const transitionRules = {
-  [DELIVERY_STATUS.PENDING]: { cancelled: ['customer', 'manager', 'admin'] },
-  [DELIVERY_STATUS.ASSIGNED]: { accepted: ['driver'], cancelled: ['manager', 'admin'], rescheduled: ['manager', 'admin'] },
-  [DELIVERY_STATUS.ACCEPTED]: { picked_up: ['driver'], cancelled: ['manager', 'admin'], rescheduled: ['manager', 'admin'] },
-  [DELIVERY_STATUS.PICKED_UP]: { in_transit: ['driver'], failed: ['driver', 'manager', 'admin'] },
-  [DELIVERY_STATUS.IN_TRANSIT]: { failed: ['driver', 'manager', 'admin'] },
-  [DELIVERY_STATUS.RESCHEDULED]: { cancelled: ['manager', 'admin'] },
+  [DELIVERY_STATUS.PENDING]: { cancelled: ['customer', 'admin'] },
+  [DELIVERY_STATUS.ASSIGNED]: { accepted: ['driver'], cancelled: ['admin'], rescheduled: ['admin'] },
+  [DELIVERY_STATUS.ACCEPTED]: { picked_up: ['driver'], cancelled: ['admin'], rescheduled: ['admin'] },
+  [DELIVERY_STATUS.PICKED_UP]: { in_transit: ['driver'], failed: ['driver', 'admin'] },
+  [DELIVERY_STATUS.IN_TRANSIT]: { failed: ['driver', 'admin'] },
+  [DELIVERY_STATUS.RESCHEDULED]: { cancelled: ['admin'] },
   [DELIVERY_STATUS.DELIVERED]: {},
   [DELIVERY_STATUS.CANCELLED]: {},
-  [DELIVERY_STATUS.FAILED]: { rescheduled: ['manager', 'admin'] }
+  [DELIVERY_STATUS.FAILED]: { rescheduled: ['admin'] }
 };
 
 const trackingNumber = () => `FF-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(2).toString('hex').toUpperCase()}`;
 
 export function deliveryScope(user) {
-  if (['admin', 'manager'].includes(user.role)) return {};
+  if (user.role === 'admin') return {};
   if (user.role === 'customer') return { customer: user._id };
   return { assignedDriver: { $in: [] } };
 }
@@ -55,7 +55,7 @@ export async function listDeliveries(query, user) {
   }
   if (query.status) filter.status = query.status;
   if (query.priority) filter.priority = query.priority;
-  if (query.driver && ['admin', 'manager'].includes(user.role)) filter.assignedDriver = query.driver;
+  if (query.driver && user.role === 'admin') filter.assignedDriver = query.driver;
   if (query.from || query.to) filter.createdAt = { ...(query.from && { $gte: new Date(query.from) }), ...(query.to && { $lte: new Date(query.to) }) };
   if (query.search) {
     const escapedSearch = query.search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');

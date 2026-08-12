@@ -28,7 +28,7 @@ export function AppShell() {
     const timer = window.setTimeout(() => setLiveMessage(''), 6000);
     return () => window.clearTimeout(timer);
   }, [liveMessage]);
-  const canManage = ['admin', 'manager'].includes(user.role);
+  const canManage = user.role === 'admin';
   return <div className="app-shell">
     <a className="skip-link" href="#main">Skip to content</a>
     <aside id="primary-navigation" ref={sidebar} className={`sidebar ${open ? 'sidebar--open' : ''}`} aria-hidden={mobile && !open} inert={mobile && !open ? '' : undefined}>

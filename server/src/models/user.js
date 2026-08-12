@@ -6,7 +6,7 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true, lowercase: true, trim: true, index: true },
   phone: { type: String, trim: true, maxlength: 24 },
   passwordHash: { type: String, required: true, select: false },
-  role: { type: String, enum: ['admin', 'manager', 'driver', 'customer'], default: 'customer', index: true },
+  role: { type: String, enum: ['admin', 'driver', 'customer'], default: 'customer', index: true },
   isActive: { type: Boolean, default: true, index: true }
 }, { timestamps: true });
 
@@ -25,4 +25,3 @@ userSchema.set('toJSON', {
 });
 
 export const User = mongoose.model('User', userSchema);
-

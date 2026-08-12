@@ -21,7 +21,7 @@ beforeAll(async () => {
   origin = `http://127.0.0.1:${httpServer.address().port}`;
 });
 beforeEach(async () => {
-  for (const [key, role] of [['customer', 'customer'], ['other', 'customer'], ['driver', 'driver'], ['manager', 'manager']]) {
+  for (const [key, role] of [['customer', 'customer'], ['other', 'customer'], ['driver', 'driver'], ['admin', 'admin']]) {
     const email = `${key}@socket.test`;
     users[key] = await User.create({ name: key, email, role, passwordHash: await User.hashPassword('Password1') });
     const login = await request(app).post('/api/v1/auth/login').send({ email, password: 'Password1' });
@@ -43,33 +43,33 @@ const nextUpdate = (socket) => new Promise((resolve) => socket.once('delivery:up
 describe('Socket.IO delivery authorization', () => {
   it('targets appropriate roles and rejects unauthorized room watches', async () => {
     const delivery = await Delivery.create({ trackingNumber: 'FF-SOCKET', customer: users.customer._id, pickupAddress: address, deliveryAddress: address, packageDescription: 'Socket package', packageWeightKg: 2, expectedDeliveryAt: new Date(Date.now() + 86400000), history: [{ status: 'pending', actor: users.customer._id }] });
-    const [customer, other, driver, manager] = await Promise.all(Object.values(tokens).map(connect));
+    const [customer, other, driver, admin] = await Promise.all(Object.values(tokens).map(connect));
     try {
       const watch = await other.timeout(2000).emitWithAck('delivery:watch', delivery._id.toString());
       expect(watch).toEqual({ ok: false, error: 'FORBIDDEN' });
       const customerEvent = nextUpdate(customer);
-      const managerEvent = nextUpdate(manager);
+      const adminEvent = nextUpdate(admin);
       let unrelatedReceived = false;
       let driverReceived = false;
       other.once('delivery:updated', () => { unrelatedReceived = true; });
       driver.once('delivery:updated', () => { driverReceived = true; });
-      await request(app).patch(`/api/v1/deliveries/${delivery._id}/status`).set('Authorization', `Bearer ${tokens.manager}`).send({ status: 'cancelled' }).expect(200);
+      await request(app).patch(`/api/v1/deliveries/${delivery._id}/status`).set('Authorization', `Bearer ${tokens.admin}`).send({ status: 'cancelled' }).expect(200);
       expect((await customerEvent).status).toBe('cancelled');
-      expect((await managerEvent).status).toBe('cancelled');
+      expect((await adminEvent).status).toBe('cancelled');
       await new Promise((resolve) => setTimeout(resolve, 100));
       expect(unrelatedReceived).toBe(false);
       expect(driverReceived).toBe(false);
-    } finally { customer.close(); other.close(); driver.close(); manager.close(); }
+    } finally { customer.close(); other.close(); driver.close(); admin.close(); }
   });
   it('delivers updates directly to the assigned driver', async () => {
     const profile = await Driver.create({ user: users.driver._id, licenseNumber: 'SOCKET-LICENSE', licenseExpiresAt: new Date(Date.now() + 86400000), status: 'busy' });
-    const delivery = await Delivery.create({ trackingNumber: 'FF-SOCKET-DRIVER', customer: users.customer._id, assignedDriver: profile._id, status: 'assigned', pickupAddress: address, deliveryAddress: address, packageDescription: 'Assigned socket package', packageWeightKg: 2, expectedDeliveryAt: new Date(Date.now() + 86400000), history: [{ status: 'assigned', actor: users.manager._id }] });
+    const delivery = await Delivery.create({ trackingNumber: 'FF-SOCKET-DRIVER', customer: users.customer._id, assignedDriver: profile._id, status: 'assigned', pickupAddress: address, deliveryAddress: address, packageDescription: 'Assigned socket package', packageWeightKg: 2, expectedDeliveryAt: new Date(Date.now() + 86400000), history: [{ status: 'assigned', actor: users.admin._id }] });
     profile.currentDelivery = delivery._id;
     await profile.save();
     const driver = await connect(tokens.driver);
     try {
       const update = nextUpdate(driver);
-      await request(app).patch(`/api/v1/deliveries/${delivery._id}/status`).set('Authorization', `Bearer ${tokens.manager}`).send({ status: 'rescheduled' }).expect(200);
+      await request(app).patch(`/api/v1/deliveries/${delivery._id}/status`).set('Authorization', `Bearer ${tokens.admin}`).send({ status: 'rescheduled' }).expect(200);
       expect((await update).status).toBe('rescheduled');
     } finally { driver.close(); }
   });

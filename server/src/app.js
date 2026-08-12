@@ -37,9 +37,8 @@ export function createApp() {
   app.use('/api/v1/auth', authRouter);
   app.use('/api/v1/deliveries', deliveryRouter);
   app.use('/api/v1', resourceRouter);
-  app.get('/api/v1/analytics/overview', authenticate, authorize('admin', 'manager'), asyncHandler(overview));
+  app.get('/api/v1/analytics/overview', authenticate, authorize('admin'), asyncHandler(overview));
   app.use(notFound);
   app.use(errorHandler);
   return app;
 }
-

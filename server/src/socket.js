@@ -29,7 +29,7 @@ export function attachSocketServer(httpServer) {
       try {
         const delivery = await Delivery.findById(id).select('customer assignedDriver');
         const canWatch = delivery && (
-          ['admin', 'manager'].includes(socket.user.role)
+          socket.user.role === 'admin'
           || (socket.user.role === 'customer' && delivery.customer.toString() === socket.user._id.toString())
           || (socket.user.role === 'driver' && socket.driver && delivery.assignedDriver?.toString() === socket.driver._id.toString())
         );
