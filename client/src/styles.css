@@ -14,3 +14,6 @@
 .account-create-form label{display:grid;gap:7px;font-size:11px;font-weight:700;color:#334e68}.account-create-form label>span{color:var(--muted);font-weight:500}.account-create-form input,.account-create-form select{min-height:44px;border:1px solid #aebfce;border-radius:9px;padding:10px 11px;background:#fff;color:var(--navy)}.account-create-form label>small{color:var(--muted);font-weight:500;line-height:1.4}.account-password{grid-column:span 2}.account-create-button{align-self:end}
 @media(max-width:1050px){.account-create-form{grid-template-columns:1fr 1fr}}
 @media(max-width:760px){.account-create-form{grid-template-columns:1fr;padding:20px}.account-password{grid-column:auto}.account-create-button{width:100%}.account-create-form input,.account-create-form select{font-size:16px}}
+.inline-resource-form{grid-template-columns:minmax(0,1.4fr) minmax(90px,.7fr) minmax(0,1fr)}
+.inline-resource-form label{min-width:0}.inline-resource-form input,.inline-resource-form select{width:100%;min-width:0}.inline-resource-form .button{grid-column:1/-1;justify-self:start}
+@media(max-width:760px){.inline-resource-form{grid-template-columns:1fr}.inline-resource-form .button{width:100%}}
