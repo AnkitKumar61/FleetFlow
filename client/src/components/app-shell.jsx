@@ -23,6 +23,11 @@ export function AppShell() {
     socket.on('notification:created', (notice) => setLiveMessage(notice.message));
     return () => socket.close();
   }, [token]);
+  useEffect(() => {
+    if (!liveMessage) return undefined;
+    const timer = window.setTimeout(() => setLiveMessage(''), 6000);
+    return () => window.clearTimeout(timer);
+  }, [liveMessage]);
   const canManage = ['admin', 'manager'].includes(user.role);
   return <div className="app-shell">
     <a className="skip-link" href="#main">Skip to content</a>
@@ -38,7 +43,7 @@ export function AppShell() {
     {open && <button className="scrim" onClick={closeNavigation} aria-label="Close navigation" />}
     <section className="workspace">
       <div className="topbar"><button ref={menuButton} className="icon-button mobile-only" onClick={() => setOpen(true)} aria-label="Open navigation" aria-expanded={open} aria-controls="primary-navigation"><Menu /></button><div className="network"><span /> Live operating view</div><button className="icon-button" aria-label="Notifications" onClick={() => setLiveMessage('No unread notifications')}><Bell /></button></div>
-      {liveMessage && <div className="toast" role="status">{liveMessage}<button onClick={() => setLiveMessage('')}>Dismiss</button></div>}
+      {liveMessage && <div className="toast" role="status"><span>{liveMessage}</span><button onClick={() => setLiveMessage('')}>Dismiss</button></div>}
       <main id="main"><Outlet /></main>
     </section>
   </div>;

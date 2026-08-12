@@ -5,10 +5,138 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../context/auth-context.jsx';
 import { ErrorState, Loading, PageHeader, StatusBadge, labelStatus } from '../components/ui.jsx';
 
-const nextDriverStatus={assigned:'accepted',accepted:'picked_up',picked_up:'in_transit'};
-export default function DeliveryDetailPage(){const{id}=useParams();const navigate=useNavigate();const{user}=useAuth();const[d,setD]=useState(null);const[error,setError]=useState('');const[busy,setBusy]=useState(false);const[drivers,setDrivers]=useState([]);const[vehicles,setVehicles]=useState([]);const[assignment,setAssignment]=useState({driverId:'',vehicleId:''});const[proof,setProof]=useState({recipientName:'',otp:'',driverNotes:''});const load=()=>{setError('');return api.get(`/deliveries/${id}`).then(r=>setD(r.data.data)).catch(e=>setError(e.response?.data?.error?.message??'Could not load delivery.'));};useEffect(()=>{load();window.addEventListener('fleetflow:data-changed',load);if(['manager','admin'].includes(user.role))Promise.all([api.get('/drivers'),api.get('/vehicles')]).then(([driverData,vehicleData])=>{setDrivers(driverData.data.data.filter(item=>item.isActive&&item.status==='available'));setVehicles(vehicleData.data.data.filter(item=>item.isActive&&item.status==='available'));}).catch(()=>{});return()=>window.removeEventListener('fleetflow:data-changed',load);},[id]);const transition=async(status)=>{if(!confirm(`Move this delivery to ${labelStatus(status)}?`))return;setBusy(true);setError('');try{const{data}=await api.patch(`/deliveries/${id}/status`,{status});setD(data.data);}catch(e){setError(e.response?.data?.error?.message??'Status change failed.');}finally{setBusy(false);}};const assign=async(event)=>{event.preventDefault();setBusy(true);setError('');try{await api.post(`/deliveries/${id}/assign`,assignment);await load();}catch(e){setError(e.response?.data?.error?.message??'Assignment failed. Refresh availability and try again.');}finally{setBusy(false);}};const submitProof=async(event)=>{event.preventDefault();setBusy(true);setError('');try{const body=new FormData();Object.entries(proof).forEach(([key,value])=>body.append(key,value));await api.post(`/deliveries/${id}/proof`,body);await load();}catch(e){setError(e.response?.data?.error?.message??'Proof could not be submitted.');}finally{setBusy(false);}};
-if(error)return <ErrorState message={error} retry={load}/>;if(!d)return <Loading/>;const next=user.role==='driver'?nextDriverStatus[d.status]:null;return <><PageHeader title={d.trackingNumber} description={`${d.priority} priority · Created ${new Intl.DateTimeFormat('en-IN',{dateStyle:'medium'}).format(new Date(d.createdAt))}`} action={<div className="header-actions"><StatusBadge status={d.status}/>{next&&<button disabled={busy} className="button" onClick={()=>transition(next)}>Mark {labelStatus(next)} <ArrowRight/></button>}</div>}/>
-<section className="detail-grid"><div className="route-board"><div><MapPin/><span>Pickup</span><strong>{d.pickupAddress.line1}</strong><small>{d.pickupAddress.city}, {d.pickupAddress.state} {d.pickupAddress.postalCode}</small></div><div className="route-line"><i/><b>{labelStatus(d.status)}</b><i/></div><div><MapPin/><span>Destination</span><strong>{d.deliveryAddress.line1}</strong><small>{d.deliveryAddress.city}, {d.deliveryAddress.state} {d.deliveryAddress.postalCode}</small></div></div><aside className="detail-facts"><h2>Shipment facts</h2><dl><div><dt><Weight/>Weight</dt><dd>{d.packageWeightKg} kg</dd></div><div><dt><PackageCheck/>Contents</dt><dd>{d.packageDescription}</dd></div><div><dt><UserRound/>Customer</dt><dd>{d.customer.name}</dd></div><div><dt>Expected</dt><dd>{new Intl.DateTimeFormat('en-IN',{dateStyle:'medium',timeStyle:'short'}).format(new Date(d.expectedDeliveryAt))}</dd></div></dl></aside></section>
-{['manager','admin'].includes(user.role)&&['pending','rescheduled'].includes(d.status)&&<form className="action-panel" onSubmit={assign}><div><h2>Assign resources</h2><p>Only currently available and capable resources can be reserved.</p></div><label>Driver<select required value={assignment.driverId} onChange={e=>setAssignment({...assignment,driverId:e.target.value})}><option value="">Select available driver</option>{drivers.map(driver=><option key={driver._id} value={driver._id}>{driver.user.name}</option>)}</select></label><label>Vehicle<select required value={assignment.vehicleId} onChange={e=>setAssignment({...assignment,vehicleId:e.target.value})}><option value="">Select available vehicle</option>{vehicles.filter(vehicle=>vehicle.capacityKg>=d.packageWeightKg).map(vehicle=><option key={vehicle._id} value={vehicle._id}>{vehicle.registrationNumber} · {vehicle.capacityKg} kg</option>)}</select></label><button className="button" disabled={busy||!assignment.driverId||!assignment.vehicleId}>Confirm assignment</button></form>}
-{user.role==='driver'&&d.status==='in_transit'&&<form className="action-panel proof-panel" onSubmit={submitProof}><div><h2>Complete delivery</h2><p>Verify the recipient before releasing the assigned resources.</p></div><label>Recipient name<input required minLength="2" value={proof.recipientName} onChange={e=>setProof({...proof,recipientName:e.target.value})}/></label><label>Delivery OTP<input required inputMode="numeric" pattern="[0-9]{4,8}" value={proof.otp} onChange={e=>setProof({...proof,otp:e.target.value})}/></label><label>Driver notes<textarea maxLength="500" value={proof.driverNotes} onChange={e=>setProof({...proof,driverNotes:e.target.value})}/></label><button className="button" disabled={busy}>Submit proof & deliver</button></form>}
-<section className="timeline"><h2>Delivery timeline</h2>{[...d.history].reverse().map((h,i)=><div className="timeline-event" key={`${h.at}-${i}`}><i/><div><strong>{labelStatus(h.status)}</strong><p>{h.note||'Status updated'}</p><time>{new Intl.DateTimeFormat('en-IN',{dateStyle:'medium',timeStyle:'short'}).format(new Date(h.at))}</time></div></div>)}</section><button className="text-button" onClick={()=>navigate('/deliveries')}>← Back to manifest</button></>}
+const nextDriverStatus = { assigned: 'accepted', accepted: 'picked_up', picked_up: 'in_transit' };
+const operationalTransitions = {
+  customer: { pending: ['cancelled'] },
+  manager: {
+    pending: ['cancelled'], assigned: ['rescheduled', 'cancelled'], accepted: ['rescheduled', 'cancelled'],
+    picked_up: ['failed'], in_transit: ['failed'], failed: ['rescheduled'], rescheduled: ['cancelled']
+  },
+  admin: {
+    pending: ['cancelled'], assigned: ['rescheduled', 'cancelled'], accepted: ['rescheduled', 'cancelled'],
+    picked_up: ['failed'], in_transit: ['failed'], failed: ['rescheduled'], rescheduled: ['cancelled']
+  }
+};
+
+export default function DeliveryDetailPage() {
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const [delivery, setDelivery] = useState(null);
+  const [loadError, setLoadError] = useState('');
+  const [actionError, setActionError] = useState('');
+  const [busyAction, setBusyAction] = useState('');
+  const [drivers, setDrivers] = useState([]);
+  const [vehicles, setVehicles] = useState([]);
+  const [assignment, setAssignment] = useState({ driverId: '', vehicleId: '' });
+  const [proof, setProof] = useState({ recipientName: '', otp: '', driverNotes: '' });
+
+  const load = () => {
+    setLoadError('');
+    return api.get(`/deliveries/${id}`).then((response) => setDelivery(response.data.data)).catch((error) => {
+      setLoadError(error.response?.data?.error?.message ?? 'Could not load delivery.');
+    });
+  };
+
+  useEffect(() => {
+    load();
+    window.addEventListener('fleetflow:data-changed', load);
+    if (['manager', 'admin'].includes(user.role)) {
+      Promise.all([api.get('/drivers'), api.get('/vehicles')]).then(([driverData, vehicleData]) => {
+        setDrivers(driverData.data.data.filter((item) => item.isActive && item.status === 'available'));
+        setVehicles(vehicleData.data.data.filter((item) => item.isActive && item.status === 'available'));
+      }).catch(() => {});
+    }
+    return () => window.removeEventListener('fleetflow:data-changed', load);
+  }, [id, user.role]);
+
+  const transition = async (status) => {
+    if (!confirm(`Move this delivery to ${labelStatus(status)}?`)) return;
+    setBusyAction(status);
+    setActionError('');
+    try {
+      const { data } = await api.patch(`/deliveries/${id}/status`, { status });
+      setDelivery(data.data);
+    } catch (error) {
+      setActionError(error.response?.data?.error?.message ?? 'Status change failed.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const assign = async (event) => {
+    event.preventDefault();
+    setBusyAction('assign');
+    setActionError('');
+    try {
+      await api.post(`/deliveries/${id}/assign`, assignment);
+      await load();
+    } catch (error) {
+      setActionError(error.response?.data?.error?.message ?? 'Assignment failed. Refresh availability and try again.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const submitProof = async (event) => {
+    event.preventDefault();
+    setBusyAction('proof');
+    setActionError('');
+    try {
+      const body = new FormData();
+      Object.entries(proof).forEach(([key, value]) => body.append(key, value));
+      await api.post(`/deliveries/${id}/proof`, body);
+      await load();
+    } catch (error) {
+      setActionError(error.response?.data?.error?.message ?? 'Proof could not be submitted.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  if (loadError) return <ErrorState message={loadError} retry={load} />;
+  if (!delivery) return <Loading />;
+
+  const next = user.role === 'driver' ? nextDriverStatus[delivery.status] : null;
+  const transitionOptions = operationalTransitions[user.role]?.[delivery.status] ?? [];
+  const actions = (next || transitionOptions.length) ? <div className="header-actions">
+    <StatusBadge status={delivery.status} />
+    {next && <button disabled={Boolean(busyAction)} className="button" onClick={() => transition(next)}>{busyAction === next ? 'Updating…' : `Mark ${labelStatus(next)}`} <ArrowRight /></button>}
+    {transitionOptions.map((status) => <button key={status} disabled={Boolean(busyAction)} className="button button--secondary" onClick={() => transition(status)}>
+      {busyAction === status ? 'Updating…' : status === 'cancelled' ? 'Cancel delivery' : `Mark ${labelStatus(status)}`}
+    </button>)}
+  </div> : <StatusBadge status={delivery.status} />;
+
+  return <>
+    <PageHeader title={delivery.trackingNumber} description={`${delivery.priority} priority · Created ${new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium' }).format(new Date(delivery.createdAt))}`} action={actions} />
+    {actionError && <p className="form-error action-error" role="alert">{actionError}</p>}
+    <section className="detail-grid">
+      <div className="route-board">
+        <div><MapPin /><span>Pickup</span><strong>{delivery.pickupAddress.line1}</strong><small>{delivery.pickupAddress.city}, {delivery.pickupAddress.state} {delivery.pickupAddress.postalCode}</small></div>
+        <div className="route-line"><i /><b>{labelStatus(delivery.status)}</b><i /></div>
+        <div><MapPin /><span>Destination</span><strong>{delivery.deliveryAddress.line1}</strong><small>{delivery.deliveryAddress.city}, {delivery.deliveryAddress.state} {delivery.deliveryAddress.postalCode}</small></div>
+      </div>
+      <aside className="detail-facts"><h2>Shipment facts</h2><dl>
+        <div><dt><Weight />Weight</dt><dd>{delivery.packageWeightKg} kg</dd></div>
+        <div><dt><PackageCheck />Contents</dt><dd>{delivery.packageDescription}</dd></div>
+        <div><dt><UserRound />Customer</dt><dd>{delivery.customer.name}</dd></div>
+        <div><dt>Expected</dt><dd>{new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(delivery.expectedDeliveryAt))}</dd></div>
+      </dl></aside>
+    </section>
+    {['manager', 'admin'].includes(user.role) && ['pending', 'rescheduled'].includes(delivery.status) && <form className="action-panel" onSubmit={assign}>
+      <div><h2>Assign resources</h2><p>{drivers.length ? 'Only currently available and capable resources can be reserved.' : 'No drivers are currently available. Release or activate a driver before assigning.'}</p></div>
+      <label>Driver<select required value={assignment.driverId} onChange={(event) => setAssignment({ ...assignment, driverId: event.target.value })}><option value="">Select available driver</option>{drivers.map((driver) => <option key={driver._id} value={driver._id}>{driver.user.name}</option>)}</select></label>
+      <label>Vehicle<select required value={assignment.vehicleId} onChange={(event) => setAssignment({ ...assignment, vehicleId: event.target.value })}><option value="">Select available vehicle</option>{vehicles.filter((vehicle) => vehicle.capacityKg >= delivery.packageWeightKg).map((vehicle) => <option key={vehicle._id} value={vehicle._id}>{vehicle.registrationNumber} · {vehicle.capacityKg} kg</option>)}</select></label>
+      <button className="button" disabled={Boolean(busyAction) || !assignment.driverId || !assignment.vehicleId}>{busyAction === 'assign' ? 'Assigning…' : 'Confirm assignment'}</button>
+    </form>}
+    {user.role === 'driver' && delivery.status === 'in_transit' && <form className="action-panel proof-panel" onSubmit={submitProof}>
+      <div><h2>Complete delivery</h2><p>Verify the recipient before releasing the assigned resources.</p></div>
+      <label>Recipient name<input required minLength="2" value={proof.recipientName} onChange={(event) => setProof({ ...proof, recipientName: event.target.value })} /></label>
+      <label>Delivery OTP<input required inputMode="numeric" pattern="[0-9]{4,8}" value={proof.otp} onChange={(event) => setProof({ ...proof, otp: event.target.value })} /></label>
+      <label>Driver notes<textarea maxLength="500" value={proof.driverNotes} onChange={(event) => setProof({ ...proof, driverNotes: event.target.value })} /></label>
+      <button className="button" disabled={Boolean(busyAction)}>{busyAction === 'proof' ? 'Submitting proof…' : 'Submit proof & deliver'}</button>
+    </form>}
+    <section className="timeline"><h2>Delivery timeline</h2>{[...delivery.history].reverse().map((history, index) => <div className="timeline-event" key={`${history.at}-${index}`}><i /><div><strong>{labelStatus(history.status)}</strong><p>{history.note || 'Status updated'}</p><time>{new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(history.at))}</time></div></div>)}</section>
+    <button className="text-button" onClick={() => navigate('/deliveries')}>← Back to manifest</button>
+  </>;
+}
