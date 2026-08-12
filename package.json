@@ -1,0 +1,25 @@
+{
+  "name": "fleetflow",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "workspaces": ["client", "server"],
+  "scripts": {
+    "dev": "concurrently -n api,web -c blue,green \"npm run dev -w server\" \"npm run dev -w client\"",
+    "build": "npm run build -w client",
+    "lint": "eslint . --max-warnings=0",
+    "test": "npm run test -w server && npm run test -w client",
+    "test:coverage": "npm run test:coverage -w server && npm run test:coverage -w client",
+    "seed": "npm run seed -w server",
+    "start": "npm run start -w server"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "concurrently": "^9.1.2",
+    "eslint": "^9.17.0",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "eslint-plugin-react-refresh": "^0.4.16",
+    "globals": "^15.14.0"
+  }
+}
+
