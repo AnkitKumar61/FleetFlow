@@ -7,3 +7,10 @@
 @media(max-width:1050px){.pulse{order:initial}}
 @media(max-width:760px){.toast{top:auto;bottom:max(18px,env(safe-area-inset-bottom))}.delivery-form input,.delivery-form select,.delivery-form textarea,.auth-form input,.filters input,.filters select,.action-panel input,.action-panel select,.action-panel textarea,.inline-resource-form input,.inline-resource-form select,.resource-row select{font-size:16px}}
 @media(prefers-reduced-motion:reduce){.sidebar{transition:none}.spin{animation:none}}
+.form-success{background:#e2f7ee;color:#076246;padding:11px;border-radius:8px;font-size:12px}
+.account-create-form{padding:24px 26px;background:#f7fafc;border-bottom:1px solid var(--line);display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;align-items:start}
+.account-form-heading{grid-column:1/-1;display:flex;align-items:flex-start;justify-content:space-between;gap:20px}
+.account-form-heading h3{margin:0;font-size:15px}.account-form-heading p{margin:5px 0 0;color:var(--muted);font-size:12px}.account-form-heading>span{background:#e3edff;color:#1754ad;border-radius:99px;padding:5px 9px;font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.05em}
+.account-create-form label{display:grid;gap:7px;font-size:11px;font-weight:700;color:#334e68}.account-create-form label>span{color:var(--muted);font-weight:500}.account-create-form input,.account-create-form select{min-height:44px;border:1px solid #aebfce;border-radius:9px;padding:10px 11px;background:#fff;color:var(--navy)}.account-create-form label>small{color:var(--muted);font-weight:500;line-height:1.4}.account-password{grid-column:span 2}.account-create-button{align-self:end}
+@media(max-width:1050px){.account-create-form{grid-template-columns:1fr 1fr}}
+@media(max-width:760px){.account-create-form{grid-template-columns:1fr;padding:20px}.account-password{grid-column:auto}.account-create-button{width:100%}.account-create-form input,.account-create-form select{font-size:16px}}

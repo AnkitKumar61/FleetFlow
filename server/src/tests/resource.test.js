@@ -22,6 +22,34 @@ describe('resource management invariants', () => {
     expect((await User.findById(admin._id)).role).toBe('admin');
   });
 
+  it('allows an admin to create a manager account', async () => {
+    const response = await request(app).post('/api/v1/users').set('Authorization', `Bearer ${token}`).send({
+      name: 'New Manager', email: 'new-manager@example.com', password: 'Password1', role: 'manager'
+    }).expect(201);
+    expect(response.body.data.user.role).toBe('manager');
+    expect(response.body.data.user.passwordHash).toBeUndefined();
+    expect(await User.findOne({ email: 'new-manager@example.com' })).toBeTruthy();
+  });
+
+  it('creates a driver account and driver profile together', async () => {
+    const response = await request(app).post('/api/v1/users').set('Authorization', `Bearer ${token}`).send({
+      name: 'New Driver', email: 'new-driver@example.com', password: 'Password1', role: 'driver',
+      licenseNumber: 'DL-NEW-100', licenseExpiresAt: new Date(Date.now() + 86400000).toISOString(), driverStatus: 'available'
+    }).expect(201);
+    expect(response.body.data.user.role).toBe('driver');
+    const profile = await Driver.findOne({ user: response.body.data.user._id });
+    expect(profile.licenseNumber).toBe('DL-NEW-100');
+    expect(profile.status).toBe('available');
+  });
+
+  it('does not allow a manager to create staff accounts', async () => {
+    const manager = await User.create({ name: 'Manager', email: 'manager@example.com', role: 'manager', passwordHash: await User.hashPassword('Password1') });
+    const login = await request(app).post('/api/v1/auth/login').send({ email: manager.email, password: 'Password1' });
+    await request(app).post('/api/v1/users').set('Authorization', `Bearer ${login.body.data.accessToken}`).send({
+      name: 'Blocked Admin', email: 'blocked@example.com', password: 'Password1', role: 'admin'
+    }).expect(403);
+  });
+
   it('keeps assigned drivers and vehicles reserved', async () => {
     const driverUser = await User.create({ name: 'Driver', email: 'driver@example.com', role: 'driver', passwordHash: 'unused' });
     const deliveryId = admin._id;

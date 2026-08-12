@@ -1,3 +1,4 @@
+import mongoose from 'mongoose';
 import { User } from '../models/user.js';
 import { Driver } from '../models/driver.js';
 import { Vehicle } from '../models/vehicle.js';
@@ -12,9 +13,41 @@ export async function listUsers(req, res) {
   const users = await User.find(filter).sort({ createdAt: -1 }).limit(100);
   return ok(res, users);
 }
+export async function createUser(req, res) {
+  const session = await mongoose.startSession();
+  let created;
+  try {
+    await session.withTransaction(async () => {
+      const email = req.body.email.toLowerCase();
+      if (await User.exists({ email }).session(session)) throw new AppError(409, 'EMAIL_IN_USE', 'An account already exists for this email');
+      const [user] = await User.create([{
+        name: req.body.name,
+        email,
+        phone: req.body.phone || undefined,
+        role: req.body.role,
+        passwordHash: await User.hashPassword(req.body.password)
+      }], { session });
+      let driver = null;
+      if (req.body.role === 'driver') {
+        [driver] = await Driver.create([{
+          user: user._id,
+          licenseNumber: req.body.licenseNumber,
+          licenseExpiresAt: req.body.licenseExpiresAt,
+          status: req.body.driverStatus ?? 'offline'
+        }], { session });
+      }
+      await recordAudit({ actor: req.user._id, action: 'user.created', entityType: 'User', entityId: user._id, metadata: { role: user.role }, requestId: req.id, session });
+      created = { user, driver };
+    });
+  } finally {
+    await session.endSession();
+  }
+  return ok(res, created, null, 201);
+}
 export async function updateUser(req, res) {
   if (req.params.id === req.user._id.toString() && req.body.isActive === false) throw new AppError(409, 'SELF_DEACTIVATION', 'You cannot deactivate your own account');
   if (req.params.id === req.user._id.toString() && req.body.role) throw new AppError(409, 'SELF_ROLE_CHANGE', 'You cannot change your own role');
+  if (req.body.role === 'driver' && !(await Driver.exists({ user: req.params.id }))) throw new AppError(409, 'DRIVER_PROFILE_REQUIRED', 'Create a driver account with licence details');
   const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
   if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
   if (req.body.role) await recordAudit({ actor: req.user._id, action: 'user.role_changed', entityType: 'User', entityId: user._id, metadata: { role: user.role }, requestId: req.id });
