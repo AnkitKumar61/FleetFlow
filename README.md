@@ -22,7 +22,7 @@ npm run seed
 npm run dev
 ```
 
-Web: `http://localhost:5173` · API: `http://localhost:4000/api/v1` · health: `http://localhost:4000/health`
+Development web: `http://localhost:5173` · Docker web: `http://localhost:8080` · API: `http://localhost:4000/api/v1` · health: `http://localhost:4000/health`
 
 ## Features
 
@@ -80,7 +80,28 @@ Server variables are documented in `server/.env.example`; client variables are i
 
 ## Screenshots
 
-Add verified desktop and mobile screenshots here after deploying with the synthetic seed dataset. No screenshot or performance claim is fabricated in this repository.
+These screenshots were captured from the rebuilt Docker application during the 2026-08-12 browser acceptance pass. They contain synthetic demonstration data.
+
+### Admin dashboard — desktop
+
+![FleetFlow admin dashboard at a desktop viewport](./docs/screenshots/admin-dashboard-desktop.png)
+
+### Customer delivery — mobile
+
+![FleetFlow customer delivery detail at a mobile viewport](./docs/screenshots/customer-delivery-mobile.png)
+
+## Verified acceptance status
+
+The 2026-08-12 acceptance pass exercised login/logout, registration validation, role-specific dashboards, delivery search/filter/empty/loading states, customer request and cancellation, manager assignment availability, the complete driver lifecycle and OTP proof, and admin resource/account forms in a real Chromium browser at desktop and mobile viewports.
+
+- Server tests: 22 passed across 5 files
+- Client tests: 2 passed across 2 files
+- ESLint: passed with zero warnings
+- Vite production build: passed; 2,269 modules transformed
+- `npm audit`: 0 vulnerabilities
+- Docker: client, server, MongoDB and Redis healthy; worker running (no Compose healthcheck is defined)
+
+See [the acceptance report](./docs/ACCEPTANCE.md) for the exact commands, browser coverage and limitations.
 
 ## Production notes
 

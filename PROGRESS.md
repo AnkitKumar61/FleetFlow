@@ -42,10 +42,17 @@ Last updated: 2026-08-12
 
 ## Verification summary
 
-- `npm run lint` — passed
-- Server Vitest/Supertest suite — 10 passed
-- Client React Testing Library suite — 1 passed
-- `npm run build` — passed with route-level code splitting
-- Dependency audit — 0 known vulnerabilities reported by npm
-- Docker files reviewed; Docker CLI was not available in this workspace
-- Browser screenshot/E2E control was not exposed in this session, so visual screenshot validation and Playwright E2E remain documented follow-up work
+- Real-browser acceptance completed against the rebuilt Docker application at `http://localhost:8080`.
+- Admin, manager, driver and customer dashboards, manifests, details, resources and forms were exercised at desktop and mobile viewports.
+- Driver acceptance → pickup → transit → OTP proof → delivery was completed through the UI; the authoritative history reflected every transition.
+- Loading, empty, native validation, server validation, duplicate-resource error and invalid-OTP recovery states were exercised.
+- Mobile drawer focus trapping/Escape recovery, visible labels, accessible names, focus styling, touch targets, sampled contrast and horizontal overflow were checked.
+- Browser console warnings/errors: 0 in the final pass.
+- Rebuilt server request log: 275 requests; the only 4xx responses were two expected refresh attempts after explicit sign-outs and one intentionally triggered duplicate-vehicle 409 used to verify inline error recovery.
+- `npm test`: server 22/22 tests in 5 files; client 2/2 tests in 2 files.
+- `npm run lint`: passed with zero warnings.
+- `npm run build`: passed; Vite transformed 2,269 modules in 52.45 seconds.
+- `npm audit`: 0 vulnerabilities.
+- Docker: client, server, MongoDB and Redis healthy; worker running without a configured healthcheck.
+- Verified screenshots added under `docs/screenshots/`.
+- Full details and remaining environment limitations are recorded in `docs/ACCEPTANCE.md`.
