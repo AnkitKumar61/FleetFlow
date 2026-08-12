@@ -2,7 +2,13 @@ import { env } from '../config/env.js';
 import * as authService from '../services/auth.service.js';
 import { ok } from '../utils/api-response.js';
 
-const cookieOptions = () => ({ httpOnly: true, secure: env.NODE_ENV === 'production', sameSite: 'strict', path: '/api/v1/auth', maxAge: env.REFRESH_TOKEN_DAYS * 86400000 });
+const cookieOptions = () => ({
+  httpOnly: true,
+  secure: env.NODE_ENV === 'production',
+  sameSite: env.NODE_ENV === 'production' ? 'none' : 'strict',
+  path: '/api/v1/auth',
+  maxAge: env.REFRESH_TOKEN_DAYS * 86400000
+});
 const context = (req) => ({ userAgent: req.get('user-agent'), ip: req.ip });
 
 export async function register(req, res) {
@@ -26,4 +32,3 @@ export async function logout(req, res) {
   return ok(res, { message: 'Signed out successfully' });
 }
 export async function me(req, res) { return ok(res, { user: req.user }); }
-

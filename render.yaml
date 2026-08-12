@@ -1,0 +1,49 @@
+services:
+  - type: keyvalue
+    name: fleetflow-redis
+    plan: free
+    region: singapore
+    ipAllowList: []
+    maxmemoryPolicy: noeviction
+    persistenceMode: off
+
+  - type: web
+    name: fleetflow-api
+    runtime: node
+    plan: free
+    region: singapore
+    repo: https://github.com/AnkitKumar61/FleetFlow
+    branch: main
+    buildCommand: npm ci
+    startCommand: npm run start -w server
+    healthCheckPath: /ready
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: MONGODB_URI
+        sync: false
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: fleetflow-redis
+          property: connectionString
+      - key: CLIENT_ORIGIN
+        sync: false
+      - key: ACCESS_TOKEN_SECRET
+        generateValue: true
+      - key: REFRESH_TOKEN_SECRET
+        generateValue: true
+      - key: ACCESS_TOKEN_TTL
+        value: 15m
+      - key: REFRESH_TOKEN_DAYS
+        value: "7"
+      - key: LOG_LEVEL
+        value: info
+      - key: UPLOAD_DIR
+        value: /tmp/uploads
+      - key: TRUST_PROXY
+        value: "true"
+      - key: EMBEDDED_WORKER
+        value: "true"

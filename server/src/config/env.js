@@ -13,7 +13,8 @@ const schema = z.object({
   REFRESH_TOKEN_DAYS: z.coerce.number().int().positive().default(7),
   LOG_LEVEL: z.string().default('info'),
   UPLOAD_DIR: z.string().default('uploads'),
-  TRUST_PROXY: z.enum(['true', 'false']).default('false')
+  TRUST_PROXY: z.enum(['true', 'false']).default('false'),
+  EMBEDDED_WORKER: z.enum(['true', 'false']).default('false')
 });
 
 const parsed = schema.safeParse(process.env);
@@ -22,4 +23,3 @@ if (!parsed.success) {
 }
 
 export const env = parsed.data;
-
