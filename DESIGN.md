@@ -16,7 +16,7 @@ The interface is light because dispatchers use it for long daytime sessions unde
 
 ## Typography
 
-Manrope is the workhorse face: tabular clarity, distinguishable weights and compact forms. Display headings use 700–800 weight with restrained negative tracking. Labels are small, uppercase only where they represent operational metadata.
+The native Segoe UI Variable workhorse stack provides tabular clarity, distinguishable weights, fast rendering and reliable offline operation. Display headings use 700–800 weight with restrained negative tracking. Labels are small, uppercase only where they represent operational metadata.
 
 ## Components
 
@@ -34,4 +34,3 @@ Primary rhythm: 8, 12, 16, 24, 32 and 40 pixels. Panel radii are 14–16 pixels;
 ## States and motion
 
 Every data surface has loading, empty and error treatment. Buttons expose disabled state; destructive/state-changing actions require confirmation. Motion is limited to the mobile drawer, loader and native chart transition, and respects reduced-motion preferences.
-

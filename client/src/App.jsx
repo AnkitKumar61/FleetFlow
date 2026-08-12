@@ -17,6 +17,11 @@ function Protected() {
   return <AppShell />;
 }
 
+function RequireRoles({ roles, children }) {
+  const { user } = useAuth();
+  return roles.includes(user.role) ? children : <Navigate to="/" replace />;
+}
+
 export function App() {
   return <Suspense fallback={<div className="boot"><span className="brand-mark">FF</span><p>Loading workspace…</p></div>}><Routes>
     <Route path="/login" element={<AuthPages mode="login" />} />
@@ -24,7 +29,7 @@ export function App() {
     <Route element={<Protected />}>
       <Route index element={<DashboardPage />} />
       <Route path="deliveries" element={<DeliveriesPage />} />
-      <Route path="deliveries/new" element={<NewDeliveryPage />} />
+      <Route path="deliveries/new" element={<RequireRoles roles={['customer','manager','admin']}><NewDeliveryPage /></RequireRoles>} />
       <Route path="deliveries/:id" element={<DeliveryDetailPage />} />
       <Route path="resources" element={<ResourcesPage />} />
     </Route>
