@@ -6,7 +6,7 @@ import { Driver } from '../models/driver.js';
 import { Vehicle } from '../models/vehicle.js';
 import { AppError } from '../utils/app-error.js';
 import { recordAudit } from './audit.service.js';
-import { emitDeliveryUpdate } from './realtime.service.js';
+import { emitDeliveryUpdate, emitLocationUpdate } from './realtime.service.js';
 import { scheduleDelayCheck } from './queue.service.js';
 
 const transitionRules = {
@@ -112,6 +112,7 @@ export async function assignDelivery(deliveryId, input, actor, requestId) {
       if (!vehicle) throw new AppError(409, 'VEHICLE_UNAVAILABLE', 'The vehicle is unavailable or does not have enough capacity');
       delivery.assignedDriver = driver._id;
       delivery.assignedVehicle = vehicle._id;
+      delivery.liveLocation = undefined;
       delivery.status = DELIVERY_STATUS.ASSIGNED;
       delivery.history.push({ status: DELIVERY_STATUS.ASSIGNED, actor: actor._id, note: 'Driver and vehicle assigned' });
       assigned = await delivery.save({ session });
@@ -128,6 +129,10 @@ export async function transitionDelivery(deliveryId, input, actor, requestId) {
   const roles = transitionRules[delivery.status]?.[input.status];
   if (!roles?.includes(actor.role)) throw new AppError(409, 'INVALID_STATUS_TRANSITION', `Cannot move a delivery from ${delivery.status} to ${input.status}`);
   delivery.status = input.status;
+  if (['delivered', 'failed', 'cancelled', 'rescheduled'].includes(input.status) && delivery.liveLocation) {
+    delivery.liveLocation.sharing = false;
+    delivery.liveLocation.updatedAt = new Date();
+  }
   delivery.history.push({ status: input.status, actor: actor._id, note: input.note });
   await delivery.save();
   if (['delivered', 'failed', 'cancelled', 'rescheduled'].includes(input.status)) await releaseResources(delivery);
@@ -155,6 +160,10 @@ export async function submitProof(deliveryId, input, actor, requestId) {
   if (!full.proof?.otpHash) throw new AppError(409, 'DELIVERY_OTP_NOT_CONFIGURED', 'This delivery does not have a verification code');
   if (!(await bcrypt.compare(input.otp, full.proof.otpHash))) throw new AppError(422, 'INVALID_DELIVERY_OTP', 'The delivery verification code is incorrect');
   delivery.status = DELIVERY_STATUS.DELIVERED;
+  if (delivery.liveLocation) {
+    delivery.liveLocation.sharing = false;
+    delivery.liveLocation.updatedAt = new Date();
+  }
   delivery.proof = { recipientName: input.recipientName, deliveredAt: new Date(), driverNotes: input.driverNotes, imagePath: input.imagePath };
   delivery.history.push({ status: DELIVERY_STATUS.DELIVERED, actor: actor._id, note: `Received by ${input.recipientName}` });
   await delivery.save();
@@ -162,6 +171,37 @@ export async function submitProof(deliveryId, input, actor, requestId) {
   await recordAudit({ actor: actor._id, action: 'delivery.proof_submitted', entityType: 'Delivery', entityId: delivery._id, requestId });
   await emitDeliveryUpdate(delivery);
   return delivery;
+}
+
+export async function updateLiveLocation(deliveryId, input, actor) {
+  const delivery = await getAuthorizedDelivery(deliveryId, actor);
+  if (![DELIVERY_STATUS.ACCEPTED, DELIVERY_STATUS.PICKED_UP, DELIVERY_STATUS.IN_TRANSIT].includes(delivery.status)) {
+    throw new AppError(409, 'TRACKING_NOT_ACTIVE', 'Live tracking is available only after the driver accepts the delivery');
+  }
+
+  const updatedAt = new Date();
+  if (input.sharing === false) {
+    if (delivery.liveLocation) {
+      delivery.liveLocation.sharing = false;
+      delivery.liveLocation.updatedAt = updatedAt;
+      await delivery.save();
+      await emitLocationUpdate(delivery);
+    }
+    return delivery.liveLocation ?? { sharing: false, updatedAt };
+  }
+
+  delivery.liveLocation = {
+    latitude: input.latitude,
+    longitude: input.longitude,
+    accuracyMeters: input.accuracyMeters,
+    speedKph: input.speedKph,
+    headingDegrees: input.headingDegrees,
+    sharing: true,
+    updatedAt
+  };
+  await delivery.save();
+  await emitLocationUpdate(delivery);
+  return delivery.liveLocation;
 }
 
 export const validTransitions = transitionRules;

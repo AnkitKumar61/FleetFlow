@@ -1,7 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import DeliveryDetailPage from './delivery-detail-page.jsx';
 
 const { api, user } = vi.hoisted(() => ({
@@ -11,6 +11,8 @@ const { api, user } = vi.hoisted(() => ({
 
 vi.mock('../lib/api.js', () => ({ api }));
 vi.mock('../context/auth-context.jsx', () => ({ useAuth: () => ({ user }) }));
+
+afterEach(cleanup);
 
 const delivery = {
   _id: 'delivery-id', trackingNumber: 'FF-UI-1001', priority: 'standard', status: 'pending',
@@ -40,5 +42,34 @@ describe('delivery detail actions', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Cancellation is temporarily unavailable');
     expect(screen.getByRole('heading', { name: 'FF-UI-1001' })).toBeInTheDocument();
     expect(api.patch).toHaveBeenCalledWith('/deliveries/delivery-id/status', { status: 'cancelled' });
+  });
+
+  it('shows the saved live location to the customer on an active delivery', async () => {
+    api.get.mockResolvedValue({ data: { data: {
+      ...delivery,
+      status: 'in_transit',
+      assignedDriver: { user: { name: 'Rohan Driver' } },
+      liveLocation: { latitude: 18.5204, longitude: 73.8567, accuracyMeters: 14, speedKph: 31, sharing: true, updatedAt: new Date().toISOString() }
+    } } });
+    render(<MemoryRouter initialEntries={['/deliveries/delivery-id']}><Routes><Route path="/deliveries/:id" element={<DeliveryDetailPage />} /></Routes></MemoryRouter>);
+
+    expect(await screen.findByRole('heading', { name: 'Live driver tracking' })).toBeInTheDocument();
+    expect(screen.getByText('Live location')).toBeInTheDocument();
+    expect(screen.getByText('Rohan Driver')).toBeInTheDocument();
+    expect(screen.getByText('31 km/h')).toBeInTheDocument();
+  });
+
+  it('keeps the last driver position visible after tracking ends', async () => {
+    api.get.mockResolvedValue({ data: { data: {
+      ...delivery,
+      status: 'delivered',
+      assignedDriver: { user: { name: 'Rohan Driver' } },
+      liveLocation: { latitude: 18.5204, longitude: 73.8567, sharing: false, updatedAt: new Date().toISOString() }
+    } } });
+    render(<MemoryRouter initialEntries={['/deliveries/delivery-id']}><Routes><Route path="/deliveries/:id" element={<DeliveryDetailPage />} /></Routes></MemoryRouter>);
+
+    expect(await screen.findByRole('heading', { name: 'Live driver tracking' })).toBeInTheDocument();
+    expect(screen.getByText('Tracking ended')).toBeInTheDocument();
+    expect(screen.getByText('Rohan Driver')).toBeInTheDocument();
   });
 });

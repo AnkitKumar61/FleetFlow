@@ -9,5 +9,5 @@ export async function list(req, res) {
 export async function get(req, res) { return ok(res, await deliveryService.getAuthorizedDelivery(req.params.id, req.user, { populate: true })); }
 export async function assign(req, res) { return ok(res, await deliveryService.assignDelivery(req.params.id, req.body, req.user, req.id)); }
 export async function transition(req, res) { return ok(res, await deliveryService.transitionDelivery(req.params.id, req.body, req.user, req.id)); }
+export async function updateLocation(req, res) { return ok(res, await deliveryService.updateLiveLocation(req.params.id, req.body, req.user)); }
 export async function proof(req, res) { return ok(res, await deliveryService.submitProof(req.params.id, { ...req.body, imagePath: req.file?.path }, req.user, req.id)); }
-

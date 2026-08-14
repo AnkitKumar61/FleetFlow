@@ -27,7 +27,7 @@ Development web: `http://localhost:5173` · Docker web: `http://localhost:8080` 
 ## Features
 
 - Registration, login, rotating HTTP-only refresh sessions and logout revocation
-- Admin, manager, driver and customer authorization with delivery-level isolation
+- Admin, driver and customer authorization with delivery-level isolation
 - Driver/vehicle management and transaction-safe capacity-aware assignment
 - Server-enforced delivery state machine and auditable status timeline
 - Cursor pagination, full-text search and operational filters
@@ -35,6 +35,7 @@ Development web: `http://localhost:5173` · Docker web: `http://localhost:8080` 
 - BullMQ delayed-delivery alerts with deterministic idempotency
 - MongoDB aggregation analytics and accessible responsive dashboards
 - Delivery OTP/proof service with restricted optional image upload
+- Permission-based live driver GPS with a persisted last position and authorized realtime map updates
 
 ## Demo accounts
 
@@ -43,7 +44,6 @@ After `npm run seed`, all use password `Demo1234`:
 | Role | Email |
 |---|---|
 | Admin | `admin@fleetflow.demo` |
-| Manager | `manager@fleetflow.demo` |
 | Driver | `driver@fleetflow.demo` |
 | Customer | `customer@fleetflow.demo` |
 
@@ -92,7 +92,7 @@ These screenshots were captured from the rebuilt Docker application during the 2
 
 ## Verified acceptance status
 
-The 2026-08-12 acceptance pass exercised login/logout, registration validation, role-specific dashboards, delivery search/filter/empty/loading states, customer request and cancellation, manager assignment availability, the complete driver lifecycle and OTP proof, and admin resource/account forms in a real Chromium browser at desktop and mobile viewports.
+The 2026-08-12 acceptance pass exercised login/logout, registration validation, role-specific dashboards, delivery search/filter/empty/loading states, customer request and cancellation, Admin assignment availability, the complete driver lifecycle and OTP proof, and Admin resource/account forms in a real Chromium browser at desktop and mobile viewports.
 
 - Server tests: 22 passed across 5 files
 - Client tests: 2 passed across 2 files

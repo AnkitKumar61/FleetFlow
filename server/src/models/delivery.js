@@ -30,6 +30,16 @@ const historySchema = new mongoose.Schema({
   at: { type: Date, default: Date.now }
 }, { _id: false });
 
+const liveLocationSchema = new mongoose.Schema({
+  latitude: { type: Number, required: true, min: -90, max: 90 },
+  longitude: { type: Number, required: true, min: -180, max: 180 },
+  accuracyMeters: { type: Number, min: 0, max: 10000 },
+  speedKph: { type: Number, min: 0, max: 500 },
+  headingDegrees: { type: Number, min: 0, max: 360 },
+  sharing: { type: Boolean, default: true },
+  updatedAt: { type: Date, required: true, default: Date.now }
+}, { _id: false });
+
 const deliverySchema = new mongoose.Schema({
   trackingNumber: { type: String, required: true, unique: true, index: true },
   customer: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, index: true },
@@ -50,6 +60,7 @@ const deliverySchema = new mongoose.Schema({
     driverNotes: String,
     imagePath: String
   },
+  liveLocation: { type: liveLocationSchema, default: undefined },
   delayedNotifiedAt: Date
 }, { timestamps: true, optimisticConcurrency: true });
 

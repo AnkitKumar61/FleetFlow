@@ -15,6 +15,17 @@ export async function emitDeliveryUpdate(delivery, assignedDriver = delivery.ass
   audience.emit('delivery:updated', payload);
 }
 
+export async function emitLocationUpdate(delivery) {
+  if (!io || !delivery.liveLocation) return;
+  const payload = { deliveryId: delivery._id, location: delivery.liveLocation.toObject?.() ?? delivery.liveLocation };
+  let audience = io.to('role:admin').to(`user:${delivery.customer}`).to(`delivery:${delivery._id}`);
+  if (delivery.assignedDriver) {
+    const driver = await Driver.findById(delivery.assignedDriver).select('user');
+    if (driver?.user) audience = audience.to(`user:${driver.user}`);
+  }
+  audience.emit('delivery:location', payload);
+}
+
 export function emitAdminAlert(notification) {
   io?.to('role:admin').emit('notification:created', notification);
 }

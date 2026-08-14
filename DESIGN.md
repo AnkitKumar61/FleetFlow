@@ -24,6 +24,7 @@ The native Segoe UI Variable workhorse stack provides tabular clarity, distingui
 - Metric strips share edges and dividers rather than floating as independent cards.
 - Manifests use full-width rows, strong tracking numbers, muted detail and right-edge status.
 - Status pills are compact controls/signals and always include text, never color alone.
+- Live-location panels pair the map with a plain-language freshness state and textual last-update readout; preserve the last known position as read-only when sharing stops or the operation ends, and provide a usable non-map fallback.
 - Panels have either a subtle offset blur shadow or a rule, not both.
 - Forms group by real operational concepts: pickup, destination and package.
 

@@ -2,11 +2,11 @@
 
 ## 60-second introduction
 
-“FleetFlow is a logistics delivery-management platform for four roles: admins, managers, drivers and customers. I built it as a JavaScript modular monolith with React, Express, MongoDB, Redis/BullMQ and Socket.IO. Its most important engineering decisions are server-owned delivery transitions, object-level authorization, transactional driver/vehicle assignment, refresh-token rotation and idempotent delayed-delivery processing. I chose a modular monolith because it keeps deployment and debugging straightforward while still separating routes, controllers, services, models and infrastructure.”
+“FleetFlow is a logistics delivery-management platform for three roles: Admin, Driver and Customer. I built it as a JavaScript modular monolith with React, Express, MongoDB, Redis/BullMQ and Socket.IO. Its most important engineering decisions are server-owned delivery transitions, object-level authorization, transactional driver/vehicle assignment, refresh-token rotation and idempotent delayed-delivery processing. I chose a modular monolith because it keeps deployment and debugging straightforward while still separating routes, controllers, services, models and infrastructure.”
 
 ## Main flow
 
-A customer creates a pending request. A manager assigns one available driver and sufficiently capable vehicle in a MongoDB transaction. The driver accepts, picks up and moves it in transit. Proof with recipient and OTP completes it, releases both resources, records audit/history entries and emits a realtime hint. If the expected time passes first, a deterministic BullMQ job creates one manager notification.
+A customer creates a pending request. An Admin assigns one available driver and sufficiently capable vehicle in a MongoDB transaction. The driver accepts, picks up and moves it in transit. Proof with recipient and OTP completes it, releases both resources, records audit/history entries and emits a realtime hint. If the expected time passes first, a deterministic BullMQ job creates one Admin notification.
 
 ## Questions to expect
 
@@ -62,4 +62,3 @@ Run stateless API replicas behind a load balancer, use the Redis Socket.IO adapt
 - Add geocoding and route/ETA providers behind explicit adapters.
 - Use PostgreSQL if relational reporting and constraints become dominant.
 - Add browser E2E tests against disposable Docker dependencies in CI.
-
