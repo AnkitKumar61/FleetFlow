@@ -4,9 +4,10 @@ import mongoose from 'mongoose';
 import { Delivery, DELIVERY_STATUS } from '../models/delivery.js';
 import { Driver } from '../models/driver.js';
 import { Vehicle } from '../models/vehicle.js';
+import { Notification } from '../models/notification.js';
 import { AppError } from '../utils/app-error.js';
 import { recordAudit } from './audit.service.js';
-import { emitDeliveryUpdate, emitLocationUpdate } from './realtime.service.js';
+import { emitAdminAlert, emitDeliveryUpdate, emitLocationUpdate } from './realtime.service.js';
 import { scheduleDelayCheck } from './queue.service.js';
 
 const transitionRules = {
@@ -121,6 +122,77 @@ export async function assignDelivery(deliveryId, input, actor, requestId) {
   } finally { await session.endSession(); }
   await emitDeliveryUpdate(assigned);
   return assigned;
+}
+
+export async function rejectAssignment(deliveryId, input, actor, requestId) {
+  const session = await mongoose.startSession();
+  let rejected;
+  let notification;
+  let previousDriverId;
+  try {
+    await session.withTransaction(async () => {
+      const driver = await Driver.findOne({ user: actor._id }).session(session);
+      if (!driver) throw new AppError(403, 'DRIVER_PROFILE_REQUIRED', 'A driver profile is required to reject an assignment');
+
+      const delivery = await Delivery.findOne({
+        _id: deliveryId,
+        status: DELIVERY_STATUS.ASSIGNED,
+        assignedDriver: driver._id
+      }).session(session);
+      if (!delivery) throw new AppError(409, 'ASSIGNMENT_NOT_REJECTABLE', 'This assignment is no longer available to reject');
+
+      previousDriverId = delivery.assignedDriver;
+      const previousVehicleId = delivery.assignedVehicle;
+      const releasedDriver = await Driver.findOneAndUpdate(
+        { _id: previousDriverId, currentDelivery: delivery._id },
+        { status: 'available', currentDelivery: null },
+        { new: true, session }
+      );
+      const releasedVehicle = await Vehicle.findOneAndUpdate(
+        { _id: previousVehicleId, currentDelivery: delivery._id },
+        { status: 'available', currentDelivery: null },
+        { new: true, session }
+      );
+      if (!releasedDriver || !releasedVehicle) {
+        throw new AppError(409, 'ASSIGNMENT_RESOURCE_CONFLICT', 'The assigned resources changed. Refresh and try again');
+      }
+
+      delivery.status = DELIVERY_STATUS.PENDING;
+      delivery.assignedDriver = null;
+      delivery.assignedVehicle = null;
+      delivery.liveLocation = undefined;
+      delivery.history.push({
+        status: DELIVERY_STATUS.PENDING,
+        actor: actor._id,
+        note: `Assignment rejected by driver: ${input.reason}`
+      });
+      rejected = await delivery.save({ session });
+
+      await recordAudit({
+        actor: actor._id,
+        action: 'delivery.assignment_rejected',
+        entityType: 'Delivery',
+        entityId: delivery._id,
+        metadata: { reason: input.reason, previousDriverId, previousVehicleId },
+        requestId,
+        session
+      });
+
+      [notification] = await Notification.create([{
+        key: `delivery-rejected:${delivery._id}:${crypto.randomUUID()}`,
+        audienceRole: 'admin',
+        type: 'delivery_rejected',
+        delivery: delivery._id,
+        message: `${delivery.trackingNumber} was rejected by the assigned driver: ${input.reason}`
+      }], { session });
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  await emitDeliveryUpdate(rejected, previousDriverId);
+  emitAdminAlert(notification);
+  return rejected;
 }
 
 export async function transitionDelivery(deliveryId, input, actor, requestId) {

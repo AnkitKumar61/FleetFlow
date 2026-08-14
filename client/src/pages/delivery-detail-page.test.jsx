@@ -25,6 +25,7 @@ const delivery = {
 
 describe('delivery detail actions', () => {
   beforeEach(() => {
+    user.role = 'customer';
     api.get.mockReset();
     api.patch.mockReset();
     api.post.mockReset();
@@ -71,5 +72,28 @@ describe('delivery detail actions', () => {
     expect(await screen.findByRole('heading', { name: 'Live driver tracking' })).toBeInTheDocument();
     expect(screen.getByText('Tracking ended')).toBeInTheDocument();
     expect(screen.getByText('Rohan Driver')).toBeInTheDocument();
+  });
+
+  it('requires a reason before the driver can reject an assignment', async () => {
+    user.role = 'driver';
+    api.get.mockResolvedValue({ data: { data: {
+      ...delivery,
+      status: 'assigned',
+      assignedDriver: { user: { name: 'Rohan Driver' } },
+      assignedVehicle: { registrationNumber: 'MH-12-TEST' }
+    } } });
+    api.post.mockResolvedValue({ data: { data: { ...delivery, status: 'pending' } } });
+    render(<MemoryRouter initialEntries={['/deliveries/delivery-id']}><Routes><Route path="/deliveries/:id" element={<DeliveryDetailPage />} /><Route path="/deliveries" element={<p>Delivery manifest</p>} /></Routes></MemoryRouter>);
+
+    expect(await screen.findByRole('button', { name: 'Accept delivery' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Reject delivery' }));
+    const confirmButton = screen.getByRole('button', { name: 'Confirm rejection' });
+    expect(confirmButton).toBeDisabled();
+
+    await userEvent.type(screen.getByRole('textbox', { name: 'Rejection reason' }), 'Vehicle has a brake warning');
+    await userEvent.click(confirmButton);
+
+    expect(api.post).toHaveBeenCalledWith('/deliveries/delivery-id/reject', { reason: 'Vehicle has a brake warning' });
+    expect(await screen.findByText('Delivery manifest')).toBeInTheDocument();
   });
 });

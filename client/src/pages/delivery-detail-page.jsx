@@ -26,6 +26,8 @@ export default function DeliveryDetailPage() {
   const [drivers, setDrivers] = useState([]);
   const [vehicles, setVehicles] = useState([]);
   const [assignment, setAssignment] = useState({ driverId: '', vehicleId: '' });
+  const [showRejection, setShowRejection] = useState(false);
+  const [rejectionReason, setRejectionReason] = useState('');
   const [proof, setProof] = useState({ recipientName: '', otp: '', driverNotes: '' });
 
   const load = () => {
@@ -83,6 +85,20 @@ export default function DeliveryDetailPage() {
     }
   };
 
+  const rejectAssignment = async (event) => {
+    event.preventDefault();
+    setBusyAction('reject');
+    setActionError('');
+    try {
+      await api.post(`/deliveries/${id}/reject`, { reason: rejectionReason.trim() });
+      navigate('/deliveries');
+    } catch (error) {
+      setActionError(error.response?.data?.error?.message ?? 'Assignment could not be rejected. Refresh and try again.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
   const submitProof = async (event) => {
     event.preventDefault();
     setBusyAction('proof');
@@ -106,7 +122,10 @@ export default function DeliveryDetailPage() {
   const transitionOptions = operationalTransitions[user.role]?.[delivery.status] ?? [];
   const actions = (next || transitionOptions.length) ? <div className="header-actions">
     <StatusBadge status={delivery.status} />
-    {next && <button disabled={Boolean(busyAction)} className="button" onClick={() => transition(next)}>{busyAction === next ? 'Updating…' : `Mark ${labelStatus(next)}`} <ArrowRight /></button>}
+    {next && <button disabled={Boolean(busyAction)} className="button" onClick={() => transition(next)}>{busyAction === next ? 'Updating…' : next === 'accepted' ? 'Accept delivery' : `Mark ${labelStatus(next)}`} <ArrowRight /></button>}
+    {user.role === 'driver' && delivery.status === 'assigned' && <button disabled={Boolean(busyAction)} className="button button--secondary" onClick={() => setShowRejection((current) => !current)} aria-expanded={showRejection} aria-controls="assignment-rejection">
+      Reject delivery
+    </button>}
     {transitionOptions.map((status) => <button key={status} disabled={Boolean(busyAction)} className="button button--secondary" onClick={() => transition(status)}>
       {busyAction === status ? 'Updating…' : status === 'cancelled' ? 'Cancel delivery' : `Mark ${labelStatus(status)}`}
     </button>)}
@@ -138,6 +157,14 @@ export default function DeliveryDetailPage() {
       <label>Driver<select required value={assignment.driverId} onChange={(event) => setAssignment({ ...assignment, driverId: event.target.value })}><option value="">Select available driver</option>{drivers.map((driver) => <option key={driver._id} value={driver._id}>{driver.user.name}</option>)}</select></label>
       <label>Vehicle<select required value={assignment.vehicleId} onChange={(event) => setAssignment({ ...assignment, vehicleId: event.target.value })}><option value="">Select available vehicle</option>{vehicles.filter((vehicle) => vehicle.capacityKg >= delivery.packageWeightKg).map((vehicle) => <option key={vehicle._id} value={vehicle._id}>{vehicle.registrationNumber} · {vehicle.capacityKg} kg</option>)}</select></label>
       <button className="button" disabled={Boolean(busyAction) || !assignment.driverId || !assignment.vehicleId}>{busyAction === 'assign' ? 'Assigning…' : 'Confirm assignment'}</button>
+    </form>}
+    {user.role === 'driver' && delivery.status === 'assigned' && showRejection && <form id="assignment-rejection" className="action-panel rejection-panel" onSubmit={rejectAssignment}>
+      <div><h2>Reject assignment</h2><p>Tell the dispatcher why you cannot take this delivery. The driver and vehicle will be released for another assignment.</p></div>
+      <label>Rejection reason<textarea required minLength="5" maxLength="300" value={rejectionReason} onChange={(event) => setRejectionReason(event.target.value)} placeholder="For example: vehicle issue or medical emergency" /></label>
+      <div className="rejection-actions">
+        <button type="button" className="button button--secondary" disabled={Boolean(busyAction)} onClick={() => { setShowRejection(false); setRejectionReason(''); }}>Keep assignment</button>
+        <button className="button button--danger" disabled={Boolean(busyAction) || rejectionReason.trim().length < 5}>{busyAction === 'reject' ? 'Rejecting…' : 'Confirm rejection'}</button>
+      </div>
     </form>}
     {user.role === 'driver' && delivery.status === 'in_transit' && <form className="action-panel proof-panel" onSubmit={submitProof}>
       <div><h2>Complete delivery</h2><p>Verify the recipient before releasing the assigned resources.</p></div>
