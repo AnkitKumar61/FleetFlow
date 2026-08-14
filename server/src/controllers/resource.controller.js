@@ -86,4 +86,35 @@ export async function updateVehicle(req, res) {
   return ok(res, vehicle);
 }
 export async function listAudits(_req, res) { return ok(res, await AuditLog.find().populate('actor', 'name role').sort({ createdAt: -1 }).limit(100)); }
-export async function listNotifications(_req, res) { return ok(res, await Notification.find().sort({ createdAt: -1 }).limit(50)); }
+function notificationScope(user) {
+  return user.role === 'admin'
+    ? { $or: [{ audienceRole: 'admin' }, { recipient: user._id }] }
+    : { recipient: user._id };
+}
+
+export async function listNotifications(req, res) {
+  const scope = notificationScope(req.user);
+  const [items, unreadCount] = await Promise.all([
+    Notification.find(scope).populate('delivery', 'trackingNumber status').sort({ createdAt: -1 }).limit(50),
+    Notification.countDocuments({ ...scope, readAt: null })
+  ]);
+  return ok(res, { items, unreadCount });
+}
+
+export async function markNotificationRead(req, res) {
+  const notification = await Notification.findOneAndUpdate(
+    { _id: req.params.id, ...notificationScope(req.user) },
+    { $set: { readAt: new Date() } },
+    { new: true }
+  ).populate('delivery', 'trackingNumber status');
+  if (!notification) throw new AppError(404, 'NOTIFICATION_NOT_FOUND', 'Notification not found');
+  return ok(res, notification);
+}
+
+export async function markAllNotificationsRead(req, res) {
+  const result = await Notification.updateMany(
+    { ...notificationScope(req.user), readAt: null },
+    { $set: { readAt: new Date() } }
+  );
+  return ok(res, { updatedCount: result.modifiedCount });
+}

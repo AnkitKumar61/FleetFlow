@@ -32,4 +32,6 @@ resourceRouter.get('/vehicles', authorize('admin'), asyncHandler(controller.list
 resourceRouter.post('/vehicles', authorize('admin'), validate({ body: z.object({ registrationNumber: z.string().min(3).max(30), type: z.enum(['bike', 'van', 'truck']), capacityKg: z.coerce.number().positive(), status: z.enum(['available', 'in_use', 'maintenance']).default('available') }) }), asyncHandler(controller.createVehicle));
 resourceRouter.patch('/vehicles/:id', authorize('admin'), validate({ params: id, body: z.object({ status: z.enum(['available', 'in_use', 'maintenance']).optional(), isActive: z.boolean().optional(), capacityKg: z.coerce.number().positive().optional() }) }), asyncHandler(controller.updateVehicle));
 resourceRouter.get('/audit-logs', authorize('admin'), asyncHandler(controller.listAudits));
-resourceRouter.get('/notifications', authorize('admin'), asyncHandler(controller.listNotifications));
+resourceRouter.get('/notifications', asyncHandler(controller.listNotifications));
+resourceRouter.patch('/notifications/read-all', asyncHandler(controller.markAllNotificationsRead));
+resourceRouter.patch('/notifications/:id/read', validate({ params: id }), asyncHandler(controller.markNotificationRead));

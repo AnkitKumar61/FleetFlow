@@ -4,6 +4,7 @@ import { createApp } from '../app.js';
 import { User } from '../models/user.js';
 import { Driver } from '../models/driver.js';
 import { Vehicle } from '../models/vehicle.js';
+import { Notification } from '../models/notification.js';
 
 describe('resource management invariants', () => {
   const app = createApp();
@@ -70,5 +71,41 @@ describe('resource management invariants', () => {
     expect(vehicleResponse.body.error.code).toBe('VEHICLE_ASSIGNED');
     expect((await Driver.findById(driver._id)).status).toBe('busy');
     expect((await Vehicle.findById(vehicle._id)).isActive).toBe(true);
+  });
+
+  it('returns only notifications that belong to the signed-in user', async () => {
+    const driver = await User.create({ name: 'Driver', email: 'notice-driver@example.com', role: 'driver', passwordHash: await User.hashPassword('Password1') });
+    const login = await request(app).post('/api/v1/auth/login').send({ email: driver.email, password: 'Password1' });
+    await Notification.create([
+      { key: 'admin-alert', audienceRole: 'admin', type: 'delivery_delayed', delivery: admin._id, message: 'Admin only' },
+      { key: 'driver-alert', recipient: driver._id, type: 'delivery_reassigned', delivery: admin._id, message: 'Driver only' },
+      { key: 'admin-personal', recipient: admin._id, type: 'delivery_reassigned', delivery: admin._id, message: 'Admin personal' }
+    ]);
+
+    const driverResponse = await request(app).get('/api/v1/notifications').set('Authorization', `Bearer ${login.body.data.accessToken}`).expect(200);
+    expect(driverResponse.body.data.items.map((item) => item.message)).toEqual(['Driver only']);
+    expect(driverResponse.body.data.unreadCount).toBe(1);
+
+    const adminResponse = await request(app).get('/api/v1/notifications').set('Authorization', `Bearer ${token}`).expect(200);
+    expect(new Set(adminResponse.body.data.items.map((item) => item.message))).toEqual(new Set(['Admin only', 'Admin personal']));
+    expect(adminResponse.body.data.unreadCount).toBe(2);
+  });
+
+  it('marks one or all owned notifications as read without changing another user notification', async () => {
+    const other = await User.create({ name: 'Other Driver', email: 'other-notice@example.com', role: 'driver', passwordHash: 'unused' });
+    const [first, second, inaccessible] = await Notification.create([
+      { key: 'read-one', audienceRole: 'admin', type: 'delivery_delayed', delivery: admin._id, message: 'First' },
+      { key: 'read-all', recipient: admin._id, type: 'delivery_reassigned', delivery: admin._id, message: 'Second' },
+      { key: 'do-not-read', recipient: other._id, type: 'delivery_reassigned', delivery: admin._id, message: 'Other' }
+    ]);
+
+    const readOne = await request(app).patch(`/api/v1/notifications/${first._id}/read`).set('Authorization', `Bearer ${token}`).expect(200);
+    expect(readOne.body.data.readAt).toBeTruthy();
+    await request(app).patch(`/api/v1/notifications/${inaccessible._id}/read`).set('Authorization', `Bearer ${token}`).expect(404);
+    const readAll = await request(app).patch('/api/v1/notifications/read-all').set('Authorization', `Bearer ${token}`).expect(200);
+    expect(readAll.body.data.updatedCount).toBe(1);
+
+    expect((await Notification.findById(second._id)).readAt).toBeTruthy();
+    expect((await Notification.findById(inaccessible._id)).readAt).toBeFalsy();
   });
 });
