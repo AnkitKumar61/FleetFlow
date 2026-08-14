@@ -96,4 +96,37 @@ describe('delivery detail actions', () => {
     expect(api.post).toHaveBeenCalledWith('/deliveries/delivery-id/reject', { reason: 'Vehicle has a brake warning' });
     expect(await screen.findByText('Delivery manifest')).toBeInTheDocument();
   });
+
+  it('shows the previous assignment and sends concurrency-safe reassignment details', async () => {
+    user.role = 'admin';
+    const assignedDelivery = {
+      ...delivery,
+      status: 'accepted',
+      assignedDriver: { _id: 'old-driver', user: { name: 'Current Driver' } },
+      assignedVehicle: { _id: 'old-vehicle', registrationNumber: 'MH-12-OLD' }
+    };
+    api.get.mockImplementation((url) => {
+      if (url === '/drivers') return Promise.resolve({ data: { data: [{ _id: 'new-driver', isActive: true, status: 'available', user: { name: 'Replacement Driver' } }] } });
+      if (url === '/vehicles') return Promise.resolve({ data: { data: [{ _id: 'new-vehicle', isActive: true, status: 'available', registrationNumber: 'MH-12-NEW', capacityKg: 50 }] } });
+      return Promise.resolve({ data: { data: assignedDelivery } });
+    });
+    api.post.mockResolvedValue({ data: { data: assignedDelivery } });
+    render(<MemoryRouter initialEntries={['/deliveries/delivery-id']}><Routes><Route path="/deliveries/:id" element={<DeliveryDetailPage />} /></Routes></MemoryRouter>);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Reassign resources' }));
+    expect(screen.getAllByText('Current Driver')).toHaveLength(2);
+    expect(screen.getByText('MH-12-OLD')).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Replacement driver' }), 'new-driver');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Replacement vehicle' }), 'new-vehicle');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Reassignment reason' }), 'Current driver reported a family emergency');
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm reassignment' }));
+
+    expect(api.post).toHaveBeenCalledWith('/deliveries/delivery-id/reassign', {
+      driverId: 'new-driver',
+      vehicleId: 'new-vehicle',
+      expectedDriverId: 'old-driver',
+      expectedVehicleId: 'old-vehicle',
+      reason: 'Current driver reported a family emergency'
+    });
+  });
 });

@@ -7,7 +7,7 @@ import { Vehicle } from '../models/vehicle.js';
 import { Notification } from '../models/notification.js';
 import { AppError } from '../utils/app-error.js';
 import { recordAudit } from './audit.service.js';
-import { emitAdminAlert, emitDeliveryUpdate, emitLocationUpdate } from './realtime.service.js';
+import { emitAdminAlert, emitDeliveryUpdate, emitLocationUpdate, emitUserAlert } from './realtime.service.js';
 import { scheduleDelayCheck } from './queue.service.js';
 
 const transitionRules = {
@@ -193,6 +193,117 @@ export async function rejectAssignment(deliveryId, input, actor, requestId) {
   await emitDeliveryUpdate(rejected, previousDriverId);
   emitAdminAlert(notification);
   return rejected;
+}
+
+export async function reassignDelivery(deliveryId, input, actor, requestId) {
+  const session = await mongoose.startSession();
+  let reassigned;
+  let previousDriverId;
+  let newDriverId;
+  let previousDriverUserId;
+  let newDriverUserId;
+  let previousNotification;
+  let newNotification;
+  try {
+    await session.withTransaction(async () => {
+      const delivery = await Delivery.findOne({
+        _id: deliveryId,
+        status: { $in: [DELIVERY_STATUS.ASSIGNED, DELIVERY_STATUS.ACCEPTED] },
+        assignedDriver: input.expectedDriverId,
+        assignedVehicle: input.expectedVehicleId
+      }).session(session);
+      if (!delivery) throw new AppError(409, 'DELIVERY_NOT_REASSIGNABLE', 'Only an assigned delivery that has not been picked up can be reassigned');
+
+      previousDriverId = delivery.assignedDriver;
+      const previousVehicleId = delivery.assignedVehicle;
+      newDriverId = new mongoose.Types.ObjectId(input.driverId);
+      const newVehicleId = new mongoose.Types.ObjectId(input.vehicleId);
+      if (previousDriverId.toString() === newDriverId.toString()) {
+        throw new AppError(422, 'DIFFERENT_DRIVER_REQUIRED', 'Select a different driver for reassignment');
+      }
+
+      const previousDriver = await Driver.findOneAndUpdate(
+        { _id: previousDriverId, currentDelivery: delivery._id },
+        { status: 'available', currentDelivery: null },
+        { new: true, session }
+      );
+      const previousVehicle = await Vehicle.findOneAndUpdate(
+        { _id: previousVehicleId, currentDelivery: delivery._id },
+        { status: 'available', currentDelivery: null },
+        { new: true, session }
+      );
+      if (!previousDriver || !previousVehicle) {
+        throw new AppError(409, 'ASSIGNMENT_RESOURCE_CONFLICT', 'The current assignment changed. Refresh and try again');
+      }
+
+      const newDriver = await Driver.findOneAndUpdate(
+        { _id: newDriverId, isActive: true, status: 'available', currentDelivery: null, licenseExpiresAt: { $gt: new Date() } },
+        { status: 'busy', currentDelivery: delivery._id },
+        { new: true, session }
+      );
+      if (!newDriver) throw new AppError(409, 'DRIVER_UNAVAILABLE', 'The selected replacement driver is no longer available');
+
+      const newVehicle = await Vehicle.findOneAndUpdate(
+        { _id: newVehicleId, isActive: true, status: 'available', currentDelivery: null, capacityKg: { $gte: delivery.packageWeightKg } },
+        { status: 'in_use', currentDelivery: delivery._id },
+        { new: true, session }
+      );
+      if (!newVehicle) throw new AppError(409, 'VEHICLE_UNAVAILABLE', 'The replacement vehicle is unavailable or does not have enough capacity');
+
+      previousDriverUserId = previousDriver.user;
+      newDriverUserId = newDriver.user;
+      const previousStatus = delivery.status;
+      delivery.assignedDriver = newDriver._id;
+      delivery.assignedVehicle = newVehicle._id;
+      delivery.status = DELIVERY_STATUS.ASSIGNED;
+      delivery.liveLocation = undefined;
+      delivery.history.push({
+        status: DELIVERY_STATUS.ASSIGNED,
+        actor: actor._id,
+        note: `Resources reassigned by admin: ${input.reason}`
+      });
+      reassigned = await delivery.save({ session });
+
+      await recordAudit({
+        actor: actor._id,
+        action: 'delivery.reassigned',
+        entityType: 'Delivery',
+        entityId: delivery._id,
+        metadata: {
+          reason: input.reason,
+          previousStatus,
+          previousDriverId,
+          previousVehicleId,
+          newDriverId: newDriver._id,
+          newVehicleId: newVehicle._id
+        },
+        requestId,
+        session
+      });
+
+      [previousNotification] = await Notification.create([{
+        key: `delivery-reassigned-away:${delivery._id}:${crypto.randomUUID()}`,
+        recipient: previousDriver.user,
+        type: 'delivery_reassigned',
+        delivery: delivery._id,
+        message: `${delivery.trackingNumber} was reassigned to another driver: ${input.reason}`
+      }], { session });
+      [newNotification] = await Notification.create([{
+        key: `delivery-reassigned-to:${delivery._id}:${crypto.randomUUID()}`,
+        recipient: newDriver.user,
+        type: 'delivery_reassigned',
+        delivery: delivery._id,
+        message: `${delivery.trackingNumber} has been assigned to you: ${input.reason}`
+      }], { session });
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  await emitDeliveryUpdate(reassigned, [previousDriverId, newDriverId]);
+  emitUserAlert(previousNotification, previousDriverUserId);
+  emitUserAlert(newNotification, newDriverUserId);
+  return reassigned;
 }
 
 export async function transitionDelivery(deliveryId, input, actor, requestId) {

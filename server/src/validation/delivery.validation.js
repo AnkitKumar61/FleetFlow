@@ -18,6 +18,13 @@ export const createDeliveryBody = z.object({
 
 export const deliveryIdParams = z.object({ id: objectId });
 export const assignBody = z.object({ driverId: objectId, vehicleId: objectId });
+export const reassignBody = z.object({
+  driverId: objectId,
+  vehicleId: objectId,
+  expectedDriverId: objectId,
+  expectedVehicleId: objectId,
+  reason: z.string().trim().min(5).max(300)
+});
 export const rejectAssignmentBody = z.object({ reason: z.string().trim().min(5).max(300) });
 export const transitionBody = z.object({ status: z.enum(Object.values(DELIVERY_STATUS)), note: z.string().trim().max(500).optional() });
 export const proofBody = z.object({ recipientName: z.string().trim().min(2).max(80), otp: z.string().trim().regex(/^\d{4,8}$/), driverNotes: z.string().trim().max(500).optional() });
