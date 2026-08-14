@@ -12,6 +12,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
+    "@imagekit/nodejs": "^7.10.0",
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.34.4",
     "cookie-parser": "^1.4.7",

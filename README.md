@@ -34,7 +34,7 @@ Development web: `http://localhost:5173` · Docker web: `http://localhost:8080` 
 - Authenticated Socket.IO rooms and authoritative refetch design
 - BullMQ delayed-delivery alerts with deterministic idempotency
 - MongoDB aggregation analytics and accessible responsive dashboards
-- Delivery OTP/proof service with restricted optional image upload
+- Delivery OTP/proof service with private ImageKit cloud storage and expiring signed access links
 - Permission-based live driver GPS with a persisted last position and authorized realtime map updates
 
 ## Demo accounts
@@ -67,7 +67,7 @@ Copy `server/.env.example` to `server/.env`, replace secrets, then run `docker c
 
 ## Environment
 
-Server variables are documented in `server/.env.example`; client variables are in `client/.env.example`. Never commit the real files. The required production values are the MongoDB/Redis URLs, distinct JWT secrets, exact client origin and proxy setting.
+Server variables are documented in `server/.env.example`; client variables are in `client/.env.example`. Never commit the real files. Add `IMAGEKIT_PRIVATE_KEY` and `IMAGEKIT_URL_ENDPOINT` from a free ImageKit account to enable optional proof images. The private key stays on the API server; proof files are private and the app generates five-minute signed viewing links.
 
 ## Documentation
 
@@ -105,4 +105,4 @@ See [the acceptance report](./docs/ACCEPTANCE.md) for the exact commands, browse
 
 ## Production notes
 
-Use a managed MongoDB replica set and Redis, serve the client from a CDN, terminate TLS, and replace local proof uploads with private object storage. See the deployment guide for topology, readiness and rollback details.
+Use a managed MongoDB replica set and Redis, serve the client from a CDN, terminate TLS, and configure the ImageKit variables for private proof storage. See the deployment guide for topology, readiness and rollback details.

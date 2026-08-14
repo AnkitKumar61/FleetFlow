@@ -129,4 +129,33 @@ describe('delivery detail actions', () => {
       reason: 'Current driver reported a family emergency'
     });
   });
+
+  it('includes an optional proof image in the delivery completion form', async () => {
+    user.role = 'driver';
+    api.get.mockResolvedValue({ data: { data: { ...delivery, status: 'in_transit', assignedDriver: { user: { name: 'Rohan Driver' } } } } });
+    api.post.mockResolvedValue({ data: { data: { ...delivery, status: 'delivered' } } });
+    render(<MemoryRouter initialEntries={['/deliveries/delivery-id']}><Routes><Route path="/deliveries/:id" element={<DeliveryDetailPage />} /></Routes></MemoryRouter>);
+
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Recipient name' }), 'Test Recipient');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Delivery OTP' }), '2468');
+    const image = new File([new Uint8Array([137, 80, 78, 71])], 'proof.png', { type: 'image/png' });
+    await userEvent.upload(screen.getByLabelText(/Proof image/i), image);
+    await userEvent.click(screen.getByRole('button', { name: 'Submit proof & deliver' }));
+
+    const form = api.post.mock.calls[0][1];
+    expect(api.post.mock.calls[0][0]).toBe('/deliveries/delivery-id/proof');
+    expect(form.get('image')).toBe(image);
+    expect(form.get('recipientName')).toBe('Test Recipient');
+  });
+
+  it('loads a short-lived proof image link for an authorized viewer', async () => {
+    api.get.mockImplementation((path) => path.endsWith('/proof-image')
+      ? Promise.resolve({ data: { data: { url: 'https://signed.example/proof.png', expiresIn: 300 } } })
+      : Promise.resolve({ data: { data: { ...delivery, status: 'delivered', proof: { image: { provider: 'imagekit', filePath: '/fleetflow/proofs/proof.png' } } } } }));
+    render(<MemoryRouter initialEntries={['/deliveries/delivery-id']}><Routes><Route path="/deliveries/:id" element={<DeliveryDetailPage />} /></Routes></MemoryRouter>);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'View proof image' }));
+    expect(await screen.findByRole('img', { name: 'Delivery proof for FF-UI-1001' })).toHaveAttribute('src', 'https://signed.example/proof.png');
+    expect(api.get).toHaveBeenCalledWith('/deliveries/delivery-id/proof-image');
+  });
 });

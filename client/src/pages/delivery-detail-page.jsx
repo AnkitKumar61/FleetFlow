@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowRight, MapPin, PackageCheck, UserRound, Weight } from 'lucide-react';
+import { ArrowRight, Image as ImageIcon, MapPin, PackageCheck, UserRound, Weight } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../context/auth-context.jsx';
 import { ErrorState, Loading, PageHeader, StatusBadge, labelStatus } from '../components/ui.jsx';
@@ -31,6 +31,8 @@ export default function DeliveryDetailPage() {
   const [showReassignment, setShowReassignment] = useState(false);
   const [reassignment, setReassignment] = useState({ driverId: '', vehicleId: '', reason: '' });
   const [proof, setProof] = useState({ recipientName: '', otp: '', driverNotes: '' });
+  const [proofImage, setProofImage] = useState(null);
+  const [proofImageUrl, setProofImageUrl] = useState('');
 
   const load = () => {
     setLoadError('');
@@ -129,10 +131,26 @@ export default function DeliveryDetailPage() {
     try {
       const body = new FormData();
       Object.entries(proof).forEach(([key, value]) => body.append(key, value));
+      if (proofImage) body.append('image', proofImage);
       await api.post(`/deliveries/${id}/proof`, body);
+      setProofImage(null);
       await load();
     } catch (error) {
       setActionError(error.response?.data?.error?.message ?? 'Proof could not be submitted.');
+    } finally {
+      setBusyAction('');
+    }
+  };
+
+  const toggleProofImage = async () => {
+    if (proofImageUrl) { setProofImageUrl(''); return; }
+    setBusyAction('proof-image');
+    setActionError('');
+    try {
+      const response = await api.get(`/deliveries/${id}/proof-image`);
+      setProofImageUrl(response.data.data.url);
+    } catch (error) {
+      setActionError(error.response?.data?.error?.message ?? 'Proof image could not be opened.');
     } finally {
       setBusyAction('');
     }
@@ -207,8 +225,10 @@ export default function DeliveryDetailPage() {
       <label>Recipient name<input required minLength="2" value={proof.recipientName} onChange={(event) => setProof({ ...proof, recipientName: event.target.value })} /></label>
       <label>Delivery OTP<input required inputMode="numeric" pattern="[0-9]{4,8}" value={proof.otp} onChange={(event) => setProof({ ...proof, otp: event.target.value })} /></label>
       <label>Driver notes<textarea maxLength="500" value={proof.driverNotes} onChange={(event) => setProof({ ...proof, driverNotes: event.target.value })} /></label>
+      <label>Proof image <span>Optional · JPEG, PNG, or WebP · 5 MB max</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProofImage(event.target.files[0] ?? null)} /></label>
       <button className="button" disabled={Boolean(busyAction)}>{busyAction === 'proof' ? 'Submitting proof…' : 'Submit proof & deliver'}</button>
     </form>}
+    {delivery.proof?.image?.filePath && <section className="proof-evidence"><div><ImageIcon /><div><h2>Delivery evidence</h2><p>Stored privately in ImageKit. Access links expire after five minutes.</p></div></div><button className="button button--secondary" disabled={Boolean(busyAction)} onClick={toggleProofImage}>{busyAction === 'proof-image' ? 'Opening…' : proofImageUrl ? 'Hide proof image' : 'View proof image'}</button>{proofImageUrl && <img src={proofImageUrl} alt={`Delivery proof for ${delivery.trackingNumber}`} />}</section>}
     <section className="timeline"><h2>Delivery timeline</h2>{[...delivery.history].reverse().map((history, index) => <div className="timeline-event" key={`${history.at}-${index}`}><i /><div><strong>{labelStatus(history.status)}</strong><p>{history.note || 'Status updated'}</p><time>{new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(history.at))}</time></div></div>)}</section>
     <button className="text-button" onClick={() => navigate('/deliveries')}>← Back to manifest</button>
   </>;

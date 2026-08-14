@@ -7,6 +7,7 @@ import { Vehicle } from '../models/vehicle.js';
 import { Notification } from '../models/notification.js';
 import { AppError } from '../utils/app-error.js';
 import { recordAudit } from './audit.service.js';
+import { createSignedProofUrl, deleteProofImage, uploadProofImage } from './image-storage.service.js';
 import { emitAdminAlert, emitDeliveryUpdate, emitLocationUpdate, emitUserAlert } from './realtime.service.js';
 import { scheduleDelayCheck } from './queue.service.js';
 
@@ -352,18 +353,30 @@ export async function submitProof(deliveryId, input, actor, requestId) {
   const full = await Delivery.findById(deliveryId).select('+proof.otpHash');
   if (!full.proof?.otpHash) throw new AppError(409, 'DELIVERY_OTP_NOT_CONFIGURED', 'This delivery does not have a verification code');
   if (!(await bcrypt.compare(input.otp, full.proof.otpHash))) throw new AppError(422, 'INVALID_DELIVERY_OTP', 'The delivery verification code is incorrect');
+  const proofImage = input.imageFile ? await uploadProofImage({ file: input.imageFile, trackingNumber: delivery.trackingNumber }) : undefined;
   delivery.status = DELIVERY_STATUS.DELIVERED;
   if (delivery.liveLocation) {
     delivery.liveLocation.sharing = false;
     delivery.liveLocation.updatedAt = new Date();
   }
-  delivery.proof = { recipientName: input.recipientName, deliveredAt: new Date(), driverNotes: input.driverNotes, imagePath: input.imagePath };
+  delivery.proof = { recipientName: input.recipientName, deliveredAt: new Date(), driverNotes: input.driverNotes, image: proofImage };
   delivery.history.push({ status: DELIVERY_STATUS.DELIVERED, actor: actor._id, note: `Received by ${input.recipientName}` });
-  await delivery.save();
+  try {
+    await delivery.save();
+  } catch (error) {
+    await deleteProofImage(proofImage?.fileId).catch(() => {});
+    throw error;
+  }
   await releaseResources(delivery);
-  await recordAudit({ actor: actor._id, action: 'delivery.proof_submitted', entityType: 'Delivery', entityId: delivery._id, metadata: { oldValues: { status: DELIVERY_STATUS.IN_TRANSIT }, newValues: { status: DELIVERY_STATUS.DELIVERED, recipientName: input.recipientName } }, requestId });
+  await recordAudit({ actor: actor._id, action: 'delivery.proof_submitted', entityType: 'Delivery', entityId: delivery._id, metadata: { oldValues: { status: DELIVERY_STATUS.IN_TRANSIT }, newValues: { status: DELIVERY_STATUS.DELIVERED, recipientName: input.recipientName, proofImageStored: Boolean(proofImage) } }, requestId });
   await emitDeliveryUpdate(delivery);
   return delivery;
+}
+
+export async function getProofImageAccess(deliveryId, actor) {
+  const delivery = await getAuthorizedDelivery(deliveryId, actor);
+  if (!delivery.proof?.image?.filePath) throw new AppError(404, 'PROOF_IMAGE_NOT_FOUND', 'This delivery does not have a proof image');
+  return createSignedProofUrl(delivery.proof.image.filePath);
 }
 
 export async function updateLiveLocation(deliveryId, input, actor) {

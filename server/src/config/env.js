@@ -12,9 +12,14 @@ const schema = z.object({
   ACCESS_TOKEN_TTL: z.string().default('15m'),
   REFRESH_TOKEN_DAYS: z.coerce.number().int().positive().default(7),
   LOG_LEVEL: z.string().default('info'),
-  UPLOAD_DIR: z.string().default('uploads'),
+  IMAGEKIT_PRIVATE_KEY: z.string().min(1).optional(),
+  IMAGEKIT_URL_ENDPOINT: z.string().url().optional(),
   TRUST_PROXY: z.enum(['true', 'false']).default('false'),
   EMBEDDED_WORKER: z.enum(['true', 'false']).default('false')
+}).superRefine((value, context) => {
+  if (Boolean(value.IMAGEKIT_PRIVATE_KEY) !== Boolean(value.IMAGEKIT_URL_ENDPOINT)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, message: 'IMAGEKIT_PRIVATE_KEY and IMAGEKIT_URL_ENDPOINT must be configured together' });
+  }
 });
 
 const parsed = schema.safeParse(process.env);

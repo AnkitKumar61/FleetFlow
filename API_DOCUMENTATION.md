@@ -27,9 +27,12 @@ POST /auth/login
 | POST | `/deliveries` | Customer, Admin |
 | GET | `/deliveries/:id` | Authorized owner/assignee or operations |
 | POST | `/deliveries/:id/assign` | Admin |
+| POST | `/deliveries/:id/reassign` | Admin; expected current resource IDs and reason required |
+| POST | `/deliveries/:id/reject` | Assigned driver; reason required |
 | PATCH | `/deliveries/:id/status` | Driver, Customer or Admin; state rules apply |
 | PATCH | `/deliveries/:id/location` | Assigned driver; accepted, picked up or in transit |
-| POST | `/deliveries/:id/proof` | Assigned driver; multipart form |
+| POST | `/deliveries/:id/proof` | Assigned driver; multipart form with optional JPEG, PNG, or WebP image up to 5 MB |
+| GET | `/deliveries/:id/proof-image` | Authorized delivery viewer; returns a five-minute signed ImageKit URL |
 
 List query: `search`, `status`, `priority`, `driver`, `from`, `to`, `cursor`, `limit` (max 100), `sort=newest|oldest`. The response `meta.nextCursor` is null on the final page.
 
@@ -56,8 +59,10 @@ Proof fields are `recipientName`, numeric `otp`, optional `driverNotes`, and opt
 | GET/POST/PATCH | `/drivers`, `/drivers/:id` | Admin |
 | GET/POST/PATCH | `/vehicles`, `/vehicles/:id` | Admin |
 | GET | `/analytics/overview` | Admin |
-| GET | `/notifications` | Admin |
-| GET | `/audit-logs` | Admin |
+| GET | `/notifications` | Signed-in user; returns only role or directly addressed notifications |
+| PATCH | `/notifications/:id/read` | Notification owner |
+| PATCH | `/notifications/read-all` | Signed-in user |
+| GET | `/audit-logs` | Admin; optional `actor` and `action` filters |
 
 ## Health
 
