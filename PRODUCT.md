@@ -13,7 +13,7 @@ React/Vite with modern JavaScript, Tailwind CSS, React Router, Axios, Socket.IO 
 ## Users
 
 - Admins manage people, vehicles, permissions and system activity.
-- Managers plan assignments, monitor exceptions and review operational analytics.
+- Admins plan assignments, monitor exceptions and review operational analytics.
 - Drivers execute only their assigned work and submit proof of delivery.
 - Customers request and track only their own deliveries.
 - A software-engineering interviewer is a secondary audience evaluating architecture, correctness and explainability.
@@ -32,7 +32,7 @@ Dispatchers work from dense desktop dashboards, drivers often work from phones, 
 
 ## Capabilities and Constraints
 
-The confirmed scope includes JWT authentication with refresh-session revocation, role and object authorization, driver and vehicle management, delivery lifecycle enforcement, atomic assignment, search and pagination, proof of delivery, Socket.IO updates, a delayed-delivery BullMQ workflow, analytics, audit records, Docker, CI and tests. Secrets remain external. Proof images use local development storage; production deployments should use object storage. In-app delayed notifications are the implemented notification channel. Demo content must be labeled synthetic.
+The confirmed scope includes JWT authentication with refresh-session revocation, role and object authorization, driver and vehicle management, delivery lifecycle enforcement, atomic assignment, search and pagination, proof of delivery, permission-based live GPS with persisted last position, Socket.IO updates, a delayed-delivery BullMQ workflow, analytics, audit records, Docker, CI and tests. Secrets remain external. Proof images use local development storage; production deployments should use object storage. In-app delayed notifications are the implemented notification channel. Demo content must be labeled synthetic.
 
 ## Brand Commitments
 
@@ -53,4 +53,3 @@ No customer logos, testimonials, production metrics or proprietary operational d
 ## Accessibility & Inclusion
 
 Forms and navigation must be keyboard accessible, responsive, clearly labeled, and expose loading, empty, success and error states without relying on color alone.
-

@@ -43,7 +43,7 @@ Last updated: 2026-08-12
 ## Verification summary
 
 - Real-browser acceptance completed against the rebuilt Docker application at `http://localhost:8080`.
-- Admin, manager, driver and customer dashboards, manifests, details, resources and forms were exercised at desktop and mobile viewports.
+- Admin, driver and customer dashboards, manifests, details, resources and forms were exercised at desktop and mobile viewports.
 - Driver acceptance → pickup → transit → OTP proof → delivery was completed through the UI; the authoritative history reflected every transition.
 - Loading, empty, native validation, server validation, duplicate-resource error and invalid-OTP recovery states were exercised.
 - Mobile drawer focus trapping/Escape recovery, visible labels, accessible names, focus styling, touch targets, sampled contrast and horizontal overflow were checked.

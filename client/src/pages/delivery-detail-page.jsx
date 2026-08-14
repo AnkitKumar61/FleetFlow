@@ -4,6 +4,7 @@ import { ArrowRight, MapPin, PackageCheck, UserRound, Weight } from 'lucide-reac
 import { api } from '../lib/api.js';
 import { useAuth } from '../context/auth-context.jsx';
 import { ErrorState, Loading, PageHeader, StatusBadge, labelStatus } from '../components/ui.jsx';
+import { LiveTrackingPanel } from '../components/live-tracking-panel.jsx';
 
 const nextDriverStatus = { assigned: 'accepted', accepted: 'picked_up', picked_up: 'in_transit' };
 const operationalTransitions = {
@@ -37,13 +38,21 @@ export default function DeliveryDetailPage() {
   useEffect(() => {
     load();
     window.addEventListener('fleetflow:data-changed', load);
+    const updateLocation = (event) => {
+      if (event.detail?.deliveryId !== id) return;
+      setDelivery((current) => current ? { ...current, liveLocation: event.detail.location } : current);
+    };
+    window.addEventListener('fleetflow:location-changed', updateLocation);
     if (user.role === 'admin') {
       Promise.all([api.get('/drivers'), api.get('/vehicles')]).then(([driverData, vehicleData]) => {
         setDrivers(driverData.data.data.filter((item) => item.isActive && item.status === 'available'));
         setVehicles(vehicleData.data.data.filter((item) => item.isActive && item.status === 'available'));
       }).catch(() => {});
     }
-    return () => window.removeEventListener('fleetflow:data-changed', load);
+    return () => {
+      window.removeEventListener('fleetflow:data-changed', load);
+      window.removeEventListener('fleetflow:location-changed', updateLocation);
+    };
   }, [id, user.role]);
 
   const transition = async (status) => {
@@ -119,6 +128,11 @@ export default function DeliveryDetailPage() {
         <div><dt>Expected</dt><dd>{new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(delivery.expectedDeliveryAt))}</dd></div>
       </dl></aside>
     </section>
+    {delivery.assignedDriver && (['assigned', 'accepted', 'picked_up', 'in_transit'].includes(delivery.status) || delivery.liveLocation) && <LiveTrackingPanel
+      delivery={delivery}
+      user={user}
+      onLocation={(liveLocation) => setDelivery((current) => ({ ...current, liveLocation }))}
+    />}
     {user.role === 'admin' && ['pending', 'rescheduled'].includes(delivery.status) && <form className="action-panel" onSubmit={assign}>
       <div><h2>Assign resources</h2><p>{drivers.length ? 'Only currently available and capable resources can be reserved.' : 'No drivers are currently available. Release or activate a driver before assigning.'}</p></div>
       <label>Driver<select required value={assignment.driverId} onChange={(event) => setAssignment({ ...assignment, driverId: event.target.value })}><option value="">Select available driver</option>{drivers.map((driver) => <option key={driver._id} value={driver._id}>{driver.user.name}</option>)}</select></label>

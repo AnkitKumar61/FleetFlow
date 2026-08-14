@@ -40,7 +40,7 @@ MongoDB transactions require a replica set. Local Docker Compose starts a single
 
 ## Realtime flow
 
-Socket.IO authenticates the access token at connection time and joins `user:<id>` and `role:<role>` rooms. Delivery updates target manager/admin rooms plus the customer and delivery rooms. Messages contain identifiers and state hints, not a canonical record. Clients fetch HTTP state after load/reconnection.
+Socket.IO authenticates the access token at connection time and joins `user:<id>` and `role:<role>` rooms. Delivery updates target the Admin room plus the customer, assigned driver and delivery rooms. Messages contain identifiers and state hints, not a canonical record. Clients fetch HTTP state after load/reconnection.
 
 ## BullMQ flow
 
@@ -54,4 +54,3 @@ When Redis is unavailable, the delivery write still succeeds, queue scheduling i
 - MongoDB embeds addresses and history because they belong to one delivery aggregate. Large histories could later move to an event collection.
 - Local uploads reduce demo setup; production should stream validated images to private object storage and save only an object key.
 - At higher scale, add Socket.IO's Redis adapter, multiple API replicas, separate worker autoscaling, CDN-hosted client assets, cursor-only lists and archived audit/history collections.
-

@@ -16,7 +16,7 @@ Protected endpoints use `Authorization: Bearer <access-token>`. The refresh toke
 
 ```json
 POST /auth/login
-{ "email": "manager@fleetflow.demo", "password": "Demo1234" }
+{ "email": "admin@fleetflow.demo", "password": "Demo1234" }
 ```
 
 ## Deliveries
@@ -24,10 +24,11 @@ POST /auth/login
 | Method | Path | Roles |
 |---|---|---|
 | GET | `/deliveries` | All; object scope applied |
-| POST | `/deliveries` | Customer, manager, admin |
+| POST | `/deliveries` | Customer, Admin |
 | GET | `/deliveries/:id` | Authorized owner/assignee or operations |
-| POST | `/deliveries/:id/assign` | Manager, admin |
-| PATCH | `/deliveries/:id/status` | Driver, manager, admin; state rules apply |
+| POST | `/deliveries/:id/assign` | Admin |
+| PATCH | `/deliveries/:id/status` | Driver, Customer or Admin; state rules apply |
+| PATCH | `/deliveries/:id/location` | Assigned driver; accepted, picked up or in transit |
 | POST | `/deliveries/:id/proof` | Assigned driver; multipart form |
 
 List query: `search`, `status`, `priority`, `driver`, `from`, `to`, `cursor`, `limit` (max 100), `sort=newest|oldest`. The response `meta.nextCursor` is null on the final page.
@@ -38,7 +39,12 @@ POST /deliveries/:id/assign
 
 PATCH /deliveries/:id/status
 { "status": "picked_up", "note": "Collected from warehouse gate 2" }
+
+PATCH /deliveries/:id/location
+{ "sharing": true, "latitude": 18.5204, "longitude": 73.8567, "accuracyMeters": 12, "speedKph": 28 }
 ```
+
+The assigned driver may stop sharing with `{ "sharing": false }`. The latest position is persisted and sent in realtime only to the delivery customer, assigned driver and Admin. Tracking updates are rejected before acceptance and after the delivery reaches a terminal state.
 
 Proof fields are `recipientName`, numeric `otp`, optional `driverNotes`, and optional `image` (maximum 5 MB; image MIME types only).
 
@@ -47,10 +53,10 @@ Proof fields are `recipientName`, numeric `otp`, optional `driverNotes`, and opt
 | Method | Path | Roles |
 |---|---|---|
 | GET/PATCH | `/users`, `/users/:id` | Admin |
-| GET/POST/PATCH | `/drivers`, `/drivers/:id` | Reads: manager/admin; writes vary |
-| GET/POST/PATCH | `/vehicles`, `/vehicles/:id` | Reads: manager/admin; writes: admin |
-| GET | `/analytics/overview` | Manager, admin |
-| GET | `/notifications` | Manager, admin |
+| GET/POST/PATCH | `/drivers`, `/drivers/:id` | Admin |
+| GET/POST/PATCH | `/vehicles`, `/vehicles/:id` | Admin |
+| GET | `/analytics/overview` | Admin |
+| GET | `/notifications` | Admin |
 | GET | `/audit-logs` | Admin |
 
 ## Health
@@ -58,4 +64,3 @@ Proof fields are `recipientName`, numeric `otp`, optional `driverNotes`, and opt
 `GET /health` is a process liveness check. `GET /ready` checks MongoDB and Redis and returns 503 with dependency states when degraded.
 
 Common status codes: 200/201 success, 400 invalid identifier, 401 invalid session, 403 forbidden object/role, 404 missing resource, 409 state/concurrency conflict, 422 validation failure, 429 sensitive-endpoint rate limit.
-

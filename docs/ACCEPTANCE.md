@@ -8,9 +8,9 @@ API: `http://localhost:4000/api/v1`
 
 The rebuilt Docker application was exercised in a real Chromium browser at a 1265 × 720 desktop viewport and a 390 × 844 mobile viewport.
 
-- Authentication: demo login and logout for admin, manager, driver and customer; customer registration required-field validation.
+- Authentication: demo login and logout for Admin, Driver and Customer; customer registration required-field validation.
 - Admin: overview metrics, manifest, delivery detail, resource board, account roles, self-role protection, vehicle form validation and duplicate-resource error recovery.
-- Manager: overview, delivery manifest, filters, resource board, pending-delivery cancellation action and assignment availability/empty state.
+- Admin: overview, delivery manifest, filters, resource board, pending-delivery cancellation action and assignment availability/empty state.
 - Driver: assigned delivery detail, accepted, picked up and in-transit transitions, invalid OTP error/retry, successful OTP proof and delivered history.
 - Customer: overview, manifest, exact tracking search, filters, empty search result, request form validation, delivery detail and pending-delivery cancellation.
 - Responsive/accessibility: mobile drawer open/close, focus trap and Escape return, no verified horizontal overflow, no unlabeled visible controls, no sampled text contrast below 4.5:1, and no visible interactive target below 44 × 44 on the final mobile detail.
@@ -19,7 +19,7 @@ The rebuilt Docker application was exercised in a real Chromium browser at a 126
 ## Problems fixed during acceptance
 
 - Replaced tokenized text search with escaped case-insensitive tracking/package matching so hyphenated tracking numbers return only their delivery.
-- Added customer cancellation plus manager/admin operational transition actions that were supported by the API but absent from the UI.
+- Added customer cancellation plus Admin operational transition actions that were supported by the API but absent from the UI.
 - Kept delivery and resource pages mounted when mutations fail, preserving user context and input while announcing inline errors.
 - Added loading and disabled states for filtering, pagination, status changes, assignment, proof and vehicle creation.
 - Moved mobile realtime toasts away from primary header actions, increased dismissal target size and added automatic expiry.

@@ -20,6 +20,7 @@ export function AppShell() {
     if (!token) return undefined;
     const socket = io(import.meta.env.VITE_SOCKET_URL ?? 'http://localhost:4000', { auth: { token } });
     socket.on('delivery:updated', () => { window.dispatchEvent(new Event('fleetflow:data-changed')); setLiveMessage('Delivery changed. The current view has been refreshed.'); });
+    socket.on('delivery:location', (payload) => window.dispatchEvent(new CustomEvent('fleetflow:location-changed', { detail: payload })));
     socket.on('notification:created', (notice) => setLiveMessage(notice.message));
     return () => socket.close();
   }, [token]);
