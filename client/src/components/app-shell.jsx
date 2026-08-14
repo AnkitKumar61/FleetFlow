@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
-import { BarChart3, Bell, CheckCheck, LogOut, Menu, Package, Truck, X } from 'lucide-react';
+import { BarChart3, Bell, CheckCheck, ClipboardList, LogOut, Menu, Package, Truck, X } from 'lucide-react';
 import { io } from 'socket.io-client';
 import { useAuth } from '../context/auth-context.jsx';
 import { api } from '../lib/api.js';
@@ -124,6 +124,7 @@ export function AppShell() {
         <NavLink to="/" end><BarChart3 /> Overview</NavLink>
         <NavLink to="/deliveries"><Package /> Deliveries</NavLink>
         {canManage && <NavLink to="/resources"><Truck /> Resources</NavLink>}
+        {canManage && <NavLink to="/audit"><ClipboardList /> Audit history</NavLink>}
       </nav>
       <div className="operator"><span className="avatar">{user.name.split(' ').map((word) => word[0]).slice(0,2).join('')}</span><div><strong>{user.name}</strong><small>{user.role}</small></div><button className="icon-button" onClick={logout} aria-label="Sign out"><LogOut /></button></div>
     </aside>

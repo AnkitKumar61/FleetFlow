@@ -36,7 +36,7 @@ export async function createUser(req, res) {
           status: req.body.driverStatus ?? 'offline'
         }], { session });
       }
-      await recordAudit({ actor: req.user._id, action: 'user.created', entityType: 'User', entityId: user._id, metadata: { role: user.role }, requestId: req.id, session });
+      await recordAudit({ actor: req.user._id, action: 'user.created', entityType: 'User', entityId: user._id, metadata: { oldValues: null, newValues: { name: user.name, email: user.email, role: user.role } }, requestId: req.id, session });
       created = { user, driver };
     });
   } finally {
@@ -48,9 +48,10 @@ export async function updateUser(req, res) {
   if (req.params.id === req.user._id.toString() && req.body.isActive === false) throw new AppError(409, 'SELF_DEACTIVATION', 'You cannot deactivate your own account');
   if (req.params.id === req.user._id.toString() && req.body.role) throw new AppError(409, 'SELF_ROLE_CHANGE', 'You cannot change your own role');
   if (req.body.role === 'driver' && !(await Driver.exists({ user: req.params.id }))) throw new AppError(409, 'DRIVER_PROFILE_REQUIRED', 'Create a driver account with licence details');
+  const previousUser = await User.findById(req.params.id);
   const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
   if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
-  if (req.body.role) await recordAudit({ actor: req.user._id, action: 'user.role_changed', entityType: 'User', entityId: user._id, metadata: { role: user.role }, requestId: req.id });
+  if (req.body.role) await recordAudit({ actor: req.user._id, action: 'user.role_changed', entityType: 'User', entityId: user._id, metadata: { oldValues: { role: previousUser.role }, newValues: { role: user.role } }, requestId: req.id });
   return ok(res, user);
 }
 export async function listDrivers(_req, res) {
@@ -82,10 +83,19 @@ export async function updateVehicle(req, res) {
     throw new AppError(409, 'VEHICLE_ASSIGNED', 'An assigned vehicle cannot be deactivated or made available');
   }
   const vehicle = await Vehicle.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
-  if (req.body.isActive === false) await recordAudit({ actor: req.user._id, action: 'vehicle.deactivated', entityType: 'Vehicle', entityId: vehicle._id, requestId: req.id });
+  if (req.body.isActive === false) await recordAudit({ actor: req.user._id, action: 'vehicle.deactivated', entityType: 'Vehicle', entityId: vehicle._id, metadata: { oldValues: { isActive: current.isActive }, newValues: { isActive: vehicle.isActive } }, requestId: req.id });
   return ok(res, vehicle);
 }
-export async function listAudits(_req, res) { return ok(res, await AuditLog.find().populate('actor', 'name role').sort({ createdAt: -1 }).limit(100)); }
+export async function listAudits(req, res) {
+  const filter = {};
+  if (req.query.actor) filter.actor = req.query.actor;
+  if (req.query.action) filter.action = req.query.action;
+  const [items, actions] = await Promise.all([
+    AuditLog.find(filter).populate('actor', 'name role').sort({ createdAt: -1 }).limit(100),
+    AuditLog.distinct('action')
+  ]);
+  return ok(res, { items, actions: actions.sort() });
+}
 function notificationScope(user) {
   return user.role === 'admin'
     ? { $or: [{ audienceRole: 'admin' }, { recipient: user._id }] }

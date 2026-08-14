@@ -42,7 +42,7 @@ export async function createDelivery(input, actor, requestId) {
     proof: { otpHash: await bcrypt.hash(deliveryOtp, 10) },
     history: [{ status: DELIVERY_STATUS.PENDING, note: 'Delivery request created', actor: actor._id }]
   });
-  await recordAudit({ actor: actor._id, action: 'delivery.created', entityType: 'Delivery', entityId: delivery._id, requestId });
+  await recordAudit({ actor: actor._id, action: 'delivery.created', entityType: 'Delivery', entityId: delivery._id, metadata: { oldValues: null, newValues: { status: delivery.status, trackingNumber: delivery.trackingNumber } }, requestId });
   scheduleDelayCheck(delivery).catch(() => {});
   await emitDeliveryUpdate(delivery);
   return delivery;
@@ -111,13 +111,14 @@ export async function assignDelivery(deliveryId, input, actor, requestId) {
         { status: 'in_use', currentDelivery: delivery._id }, { new: true, session }
       );
       if (!vehicle) throw new AppError(409, 'VEHICLE_UNAVAILABLE', 'The vehicle is unavailable or does not have enough capacity');
+      const previousStatus = delivery.status;
       delivery.assignedDriver = driver._id;
       delivery.assignedVehicle = vehicle._id;
       delivery.liveLocation = undefined;
       delivery.status = DELIVERY_STATUS.ASSIGNED;
       delivery.history.push({ status: DELIVERY_STATUS.ASSIGNED, actor: actor._id, note: 'Driver and vehicle assigned' });
       assigned = await delivery.save({ session });
-      await recordAudit({ actor: actor._id, action: 'delivery.assigned', entityType: 'Delivery', entityId: delivery._id, metadata: { driverId: driver._id, vehicleId: vehicle._id }, requestId, session });
+      await recordAudit({ actor: actor._id, action: 'delivery.assigned', entityType: 'Delivery', entityId: delivery._id, metadata: { oldValues: { status: previousStatus, driverId: null, vehicleId: null }, newValues: { status: DELIVERY_STATUS.ASSIGNED, driverId: driver._id, vehicleId: vehicle._id } }, requestId, session });
     });
   } finally { await session.endSession(); }
   await emitDeliveryUpdate(assigned);
@@ -173,7 +174,13 @@ export async function rejectAssignment(deliveryId, input, actor, requestId) {
         action: 'delivery.assignment_rejected',
         entityType: 'Delivery',
         entityId: delivery._id,
-        metadata: { reason: input.reason, previousDriverId, previousVehicleId },
+        metadata: {
+          reason: input.reason,
+          previousDriverId,
+          previousVehicleId,
+          oldValues: { status: DELIVERY_STATUS.ASSIGNED, driverId: previousDriverId, vehicleId: previousVehicleId },
+          newValues: { status: DELIVERY_STATUS.PENDING, driverId: null, vehicleId: null }
+        },
         requestId,
         session
       });
@@ -275,7 +282,9 @@ export async function reassignDelivery(deliveryId, input, actor, requestId) {
           previousDriverId,
           previousVehicleId,
           newDriverId: newDriver._id,
-          newVehicleId: newVehicle._id
+          newVehicleId: newVehicle._id,
+          oldValues: { status: previousStatus, driverId: previousDriverId, vehicleId: previousVehicleId },
+          newValues: { status: DELIVERY_STATUS.ASSIGNED, driverId: newDriver._id, vehicleId: newVehicle._id }
         },
         requestId,
         session
@@ -309,6 +318,7 @@ export async function reassignDelivery(deliveryId, input, actor, requestId) {
 export async function transitionDelivery(deliveryId, input, actor, requestId) {
   const delivery = await getAuthorizedDelivery(deliveryId, actor);
   const assignedDriver = delivery.assignedDriver;
+  const previousStatus = delivery.status;
   const roles = transitionRules[delivery.status]?.[input.status];
   if (!roles?.includes(actor.role)) throw new AppError(409, 'INVALID_STATUS_TRANSITION', `Cannot move a delivery from ${delivery.status} to ${input.status}`);
   delivery.status = input.status;
@@ -324,7 +334,7 @@ export async function transitionDelivery(deliveryId, input, actor, requestId) {
     delivery.assignedVehicle = null;
     await delivery.save();
   }
-  await recordAudit({ actor: actor._id, action: input.status === 'cancelled' ? 'delivery.cancelled' : 'delivery.status_changed', entityType: 'Delivery', entityId: delivery._id, metadata: { status: input.status }, requestId });
+  await recordAudit({ actor: actor._id, action: input.status === 'cancelled' ? 'delivery.cancelled' : 'delivery.status_changed', entityType: 'Delivery', entityId: delivery._id, metadata: { oldValues: { status: previousStatus }, newValues: { status: input.status }, note: input.note }, requestId });
   await emitDeliveryUpdate(delivery, assignedDriver);
   return delivery;
 }
@@ -351,7 +361,7 @@ export async function submitProof(deliveryId, input, actor, requestId) {
   delivery.history.push({ status: DELIVERY_STATUS.DELIVERED, actor: actor._id, note: `Received by ${input.recipientName}` });
   await delivery.save();
   await releaseResources(delivery);
-  await recordAudit({ actor: actor._id, action: 'delivery.proof_submitted', entityType: 'Delivery', entityId: delivery._id, requestId });
+  await recordAudit({ actor: actor._id, action: 'delivery.proof_submitted', entityType: 'Delivery', entityId: delivery._id, metadata: { oldValues: { status: DELIVERY_STATUS.IN_TRANSIT }, newValues: { status: DELIVERY_STATUS.DELIVERED, recipientName: input.recipientName } }, requestId });
   await emitDeliveryUpdate(delivery);
   return delivery;
 }

@@ -5,6 +5,7 @@ import { User } from '../models/user.js';
 import { Driver } from '../models/driver.js';
 import { Vehicle } from '../models/vehicle.js';
 import { Notification } from '../models/notification.js';
+import { AuditLog } from '../models/audit-log.js';
 
 describe('resource management invariants', () => {
   const app = createApp();
@@ -107,5 +108,22 @@ describe('resource management invariants', () => {
 
     expect((await Notification.findById(second._id)).readAt).toBeTruthy();
     expect((await Notification.findById(inaccessible._id)).readAt).toBeFalsy();
+  });
+
+  it('filters audit history by actor and action and keeps it admin-only', async () => {
+    const driver = await User.create({ name: 'Audit Driver', email: 'audit-driver@example.com', role: 'driver', passwordHash: await User.hashPassword('Password1') });
+    const driverLogin = await request(app).post('/api/v1/auth/login').send({ email: driver.email, password: 'Password1' });
+    await AuditLog.create([
+      { actor: admin._id, action: 'delivery.reassigned', entityType: 'Delivery', entityId: admin._id, metadata: { oldValues: { status: 'accepted' }, newValues: { status: 'assigned' } }, requestId: 'request-1' },
+      { actor: driver._id, action: 'delivery.assignment_rejected', entityType: 'Delivery', entityId: driver._id, requestId: 'request-2' }
+    ]);
+
+    const response = await request(app).get(`/api/v1/audit-logs?actor=${admin._id}&action=delivery.reassigned`).set('Authorization', `Bearer ${token}`).expect(200);
+    expect(response.body.data.items).toHaveLength(1);
+    expect(response.body.data.items[0].actor.name).toBe('Admin');
+    expect(response.body.data.items[0].requestId).toBe('request-1');
+    expect(response.body.data.actions).toEqual(['delivery.assignment_rejected', 'delivery.reassigned']);
+
+    await request(app).get('/api/v1/audit-logs').set('Authorization', `Bearer ${driverLogin.body.data.accessToken}`).expect(403);
   });
 });
