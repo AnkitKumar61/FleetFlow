@@ -16,9 +16,10 @@ const accounts = Array.from({ length: 7 }, (_, index) => ({
 }));
 
 const drivers = [
-  { _id: 'driver-available', user: { _id: 'user-driver-available', name: 'Asha Driver' }, licenseNumber: 'DL-101', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'available', currentDelivery: null, isActive: true },
-  { _id: 'driver-busy', user: { _id: 'user-driver-busy', name: 'Rohan Driver' }, licenseNumber: 'DL-102', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'busy', currentDelivery: 'delivery-1', isActive: true },
-  { _id: 'driver-offline', user: { _id: 'user-driver-offline', name: 'Neha Driver' }, licenseNumber: 'DL-103', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'offline', currentDelivery: null, isActive: true },
+  { _id: 'driver-available', user: { _id: 'user-driver-available', name: 'Asha Driver', role: 'driver' }, licenseNumber: 'DL-101', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'available', currentDelivery: null, isActive: true },
+  { _id: 'driver-busy', user: { _id: 'user-driver-busy', name: 'Rohan Driver', role: 'driver' }, licenseNumber: 'DL-102', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'busy', currentDelivery: 'delivery-1', isActive: true },
+  { _id: 'driver-offline', user: { _id: 'user-driver-offline', name: 'Neha Driver', role: 'driver' }, licenseNumber: 'DL-103', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'offline', currentDelivery: null, isActive: true },
+  { _id: 'driver-former', user: { _id: 'user-driver-former', name: 'Former Driver', role: 'customer' }, licenseNumber: 'DL-104', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'offline', currentDelivery: null, isActive: false },
 ];
 
 beforeEach(() => {
@@ -52,6 +53,7 @@ describe('resource account directory', () => {
     expect(await screen.findByRole('combobox', { name: 'Availability for Asha Driver' })).toHaveDisplayValue('Available');
     expect(screen.getByRole('combobox', { name: 'Availability for Rohan Driver' })).toHaveDisplayValue('On delivery');
     expect(screen.getByRole('combobox', { name: 'Availability for Neha Driver' })).toHaveDisplayValue('Unavailable');
+    expect(screen.queryByRole('combobox', { name: 'Availability for Former Driver' })).not.toBeInTheDocument();
 
     await userEvent.click(screen.getByRole('button', { name: 'Add staff account' }));
     expect(screen.getByRole('combobox', { name: 'Starting status' })).toHaveDisplayValue('Unavailable');

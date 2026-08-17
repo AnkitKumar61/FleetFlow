@@ -5,6 +5,7 @@ import { Delivery, DELIVERY_STATUS } from '../models/delivery.js';
 import { Driver } from '../models/driver.js';
 import { Vehicle } from '../models/vehicle.js';
 import { Notification } from '../models/notification.js';
+import { User } from '../models/user.js';
 import { AppError } from '../utils/app-error.js';
 import { recordAudit } from './audit.service.js';
 import { createSignedProofUrl, deleteProofImage, uploadProofImage } from './image-storage.service.js';
@@ -107,6 +108,9 @@ export async function assignDelivery(deliveryId, input, actor, requestId) {
         { status: 'busy', currentDelivery: delivery._id }, { new: true, session }
       );
       if (!driver) throw new AppError(409, 'DRIVER_UNAVAILABLE', 'The selected driver is no longer available');
+      if (!(await User.exists({ _id: driver.user, role: 'driver', isActive: true }).session(session))) {
+        throw new AppError(409, 'DRIVER_ROLE_INVALID', 'The selected user no longer has an active Driver role');
+      }
       const vehicle = await Vehicle.findOneAndUpdate(
         { _id: input.vehicleId, isActive: true, status: 'available', currentDelivery: null, capacityKg: { $gte: delivery.packageWeightKg } },
         { status: 'in_use', currentDelivery: delivery._id }, { new: true, session }
@@ -250,6 +254,9 @@ export async function reassignDelivery(deliveryId, input, actor, requestId) {
         { new: true, session }
       );
       if (!newDriver) throw new AppError(409, 'DRIVER_UNAVAILABLE', 'The selected replacement driver is no longer available');
+      if (!(await User.exists({ _id: newDriver.user, role: 'driver', isActive: true }).session(session))) {
+        throw new AppError(409, 'DRIVER_ROLE_INVALID', 'The selected replacement user no longer has an active Driver role');
+      }
 
       const newVehicle = await Vehicle.findOneAndUpdate(
         { _id: newVehicleId, isActive: true, status: 'available', currentDelivery: null, capacityKg: { $gte: delivery.packageWeightKg } },

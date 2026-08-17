@@ -73,15 +73,67 @@ export async function createUser(req, res) {
 export async function updateUser(req, res) {
   if (req.params.id === req.user._id.toString() && req.body.isActive === false) throw new AppError(409, 'SELF_DEACTIVATION', 'You cannot deactivate your own account');
   if (req.params.id === req.user._id.toString() && req.body.role) throw new AppError(409, 'SELF_ROLE_CHANGE', 'You cannot change your own role');
-  if (req.body.role === 'driver' && !(await Driver.exists({ user: req.params.id }))) throw new AppError(409, 'DRIVER_PROFILE_REQUIRED', 'Create a driver account with licence details');
-  const previousUser = await User.findById(req.params.id);
-  const user = await User.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true });
-  if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
-  if (req.body.role) await recordAudit({ actor: req.user._id, action: 'user.role_changed', entityType: 'User', entityId: user._id, metadata: { oldValues: { role: previousUser.role }, newValues: { role: user.role } }, requestId: req.id });
-  return ok(res, user);
+  const session = await mongoose.startSession();
+  let updatedUser;
+  try {
+    await session.withTransaction(async () => {
+      const user = await User.findById(req.params.id).session(session);
+      if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+
+      const previousRole = user.role;
+      const nextRole = req.body.role ?? previousRole;
+      let driver = null;
+      let oldDriverValues = null;
+      let newDriverValues = null;
+
+      if (nextRole !== previousRole && (previousRole === 'driver' || nextRole === 'driver')) {
+        driver = await Driver.findOne({ user: user._id }).session(session);
+        if (!driver) throw new AppError(409, 'DRIVER_PROFILE_REQUIRED', 'A driver profile with licence details is required');
+        oldDriverValues = { driverStatus: driver.status, driverIsActive: driver.isActive };
+
+        if (driver.currentDelivery || driver.status === 'busy') {
+          throw new AppError(409, 'DRIVER_ACTIVE_DELIVERY', 'Complete or reassign the active delivery before changing this role');
+        }
+
+        if (previousRole === 'driver') {
+          driver.status = 'offline';
+          driver.isActive = false;
+        } else {
+          if (!user.phone || !user.phoneVerifiedAt) throw new AppError(409, 'VERIFIED_PHONE_REQUIRED', 'Verify the user phone number before changing the role to Driver');
+          if (driver.licenseExpiresAt <= new Date()) throw new AppError(409, 'DRIVER_LICENCE_EXPIRED', 'Renew the driver licence before changing the role to Driver');
+          driver.status = 'offline';
+          driver.isActive = true;
+        }
+        await driver.save({ session });
+        newDriverValues = { driverStatus: driver.status, driverIsActive: driver.isActive };
+      }
+
+      if (Object.hasOwn(req.body, 'role')) user.role = req.body.role;
+      if (Object.hasOwn(req.body, 'isActive')) user.isActive = req.body.isActive;
+      updatedUser = await user.save({ session });
+
+      if (nextRole !== previousRole) {
+        await recordAudit({
+          actor: req.user._id,
+          action: 'user.role_changed',
+          entityType: 'User',
+          entityId: user._id,
+          metadata: {
+            oldValues: { role: previousRole, ...oldDriverValues },
+            newValues: { role: nextRole, ...newDriverValues }
+          },
+          requestId: req.id,
+          session
+        });
+      }
+    });
+  } finally {
+    await session.endSession();
+  }
+  return ok(res, updatedUser);
 }
 export async function listDrivers(_req, res) {
-  return ok(res, await Driver.find().populate('user', 'name email phone').populate('currentDelivery', 'trackingNumber status').sort({ createdAt: -1 }));
+  return ok(res, await Driver.find().populate('user', 'name email phone role').populate('currentDelivery', 'trackingNumber status').sort({ createdAt: -1 }));
 }
 export async function createDriver(req, res) {
   const user = await User.findById(req.body.userId);

@@ -94,7 +94,7 @@ export default function ResourcesPage() {
     setActionSuccess('');
     try {
       await api.patch(path, body);
-      if (path.startsWith('/users/')) await loadUsers();
+      if (path.startsWith('/users/')) await Promise.all([loadUsers(), loadResources()]);
       else await loadResources();
     }
     catch (requestError) { setActionError(requestError.response?.data?.error?.message ?? 'The resource could not be updated.'); }
@@ -145,6 +145,14 @@ export default function ResourcesPage() {
     setDirectoryFilters({ search: '', role: '', status: '' });
     setDirectoryPage(1);
   };
+  const changeAccountRole = (account, nextRole) => {
+    const warning = account.role === 'driver' && nextRole !== 'driver'
+      ? `Change ${account.name} to ${nextRole}? Their driver profile will become unavailable.`
+      : nextRole === 'driver'
+        ? `Change ${account.name} to Driver? Their valid driver profile will restart as Unavailable.`
+        : `Change ${account.name}'s role to ${nextRole}?`;
+    update(`/users/${account._id}`, { role: nextRole }, warning);
+  };
   const filtersActive = Boolean(directorySearch || directoryFilters.role || directoryFilters.status);
   const { items: users, pagination } = directory;
   const firstVisibleUser = pagination.total ? ((pagination.page - 1) * pagination.limit) + 1 : 0;
@@ -152,6 +160,7 @@ export default function ResourcesPage() {
 
   if (loadError) return <ErrorState message={loadError} retry={loadResources}/>;
   if (!drivers || !vehicles) return <Loading/>;
+  const visibleDrivers = drivers.filter((driver) => driver.user?.role === 'driver');
 
   return <>
     <PageHeader title="Resource board" description="Availability, allocation and account authority in one operating view."/>
@@ -159,13 +168,13 @@ export default function ResourcesPage() {
     {actionSuccess && <p className="form-success action-error" role="status">{actionSuccess}</p>}
     <div className="resources-grid">
       <section className="panel">
-        <div className="panel-heading"><div><h2>Drivers</h2><p>{drivers.filter((driver) => driver.status === 'available').length} available now</p></div></div>
-        <div className="resource-list">{drivers.length ? drivers.map((driver) => <div className="resource-row" key={driver._id}>
+        <div className="panel-heading"><div><h2>Drivers</h2><p>{visibleDrivers.filter((driver) => driver.isActive && driver.status === 'available').length} available now</p></div></div>
+        <div className="resource-list">{visibleDrivers.length ? visibleDrivers.map((driver) => <div className="resource-row" key={driver._id}>
           <span className="avatar">{driver.user.name.split(' ').map((word) => word[0]).slice(0, 2).join('')}</span>
           <div><strong>{driver.user.name}</strong><small>{driver.licenseNumber} · expires {new Intl.DateTimeFormat('en-IN', { month: 'short', year: 'numeric' }).format(new Date(driver.licenseExpiresAt))}</small></div>
           <select disabled={Boolean(busyAction) || Boolean(driver.currentDelivery)} aria-label={`Availability for ${driver.user.name}`} value={driver.status} onChange={(event) => update(`/drivers/${driver._id}`, { status: event.target.value })}>{DRIVER_STATUS_OPTIONS.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</select>
           {isAdmin && <button disabled={Boolean(busyAction) || Boolean(driver.currentDelivery)} className="text-button danger" onClick={() => update(`/drivers/${driver._id}`, { isActive: !driver.isActive }, `${driver.isActive ? 'Deactivate' : 'Activate'} ${driver.user.name}?`)}>{driver.isActive ? 'Deactivate' : 'Activate'}</button>}
-        </div>) : <p className="resource-empty">No driver profiles yet.</p>}</div>
+        </div>) : <p className="resource-empty">No active driver accounts yet.</p>}</div>
       </section>
 
       <section className="panel">
@@ -204,7 +213,7 @@ export default function ResourcesPage() {
         <button type="button" className="text-button directory-reset" onClick={clearDirectoryFilters} disabled={!filtersActive}><RotateCcw /> Clear filters</button>
       </div>
       <div className="account-directory-summary" role="status"><span>{directoryLoading ? 'Updating accounts…' : pagination.total ? `Showing ${firstVisibleUser}–${lastVisibleUser} of ${pagination.total}` : 'No accounts match these filters'}</span><span>Page {pagination.page} of {pagination.totalPages}</span></div>
-      {directoryError ? <div className="directory-error"><p>{directoryError}</p><button type="button" className="text-button" onClick={() => loadUsers()}>Try again</button></div> : users.length ? <div className="resource-list" aria-busy={directoryLoading}>{users.map((account) => <div className="resource-row user-row" key={account._id}><span className="avatar">{account.name.split(' ').map((word) => word[0]).slice(0, 2).join('')}</span><div className="account-identity"><strong>{account.name}</strong><small>{account.email}</small></div><span className={`account-state account-state--${account.isActive ? 'active' : 'inactive'}`}>{account.isActive ? 'Active' : 'Inactive'}</span><select disabled={Boolean(busyAction) || account._id === user._id} aria-label={`Role for ${account.name}`} value={account.role} onChange={(event) => update(`/users/${account._id}`, { role: event.target.value }, `Change ${account.name}'s role?`)}><option value="admin">Admin</option><option value="driver" disabled={!drivers.some((driver) => driver.user._id === account._id)}>Driver</option><option value="customer">Customer</option></select><button className="button button--secondary" disabled={Boolean(busyAction) || account._id === user._id} onClick={() => update(`/users/${account._id}`, { isActive: !account.isActive }, `${account.isActive ? 'Deactivate' : 'Activate'} ${account.name}?`)}>{account.isActive ? 'Deactivate' : 'Activate'}</button></div>)}</div> : !directoryLoading && <div className="account-directory-empty"><Search /><h3>No matching accounts</h3><p>Change or clear the filters to see more people.</p></div>}
+      {directoryError ? <div className="directory-error"><p>{directoryError}</p><button type="button" className="text-button" onClick={() => loadUsers()}>Try again</button></div> : users.length ? <div className="resource-list" aria-busy={directoryLoading}>{users.map((account) => <div className="resource-row user-row" key={account._id}><span className="avatar">{account.name.split(' ').map((word) => word[0]).slice(0, 2).join('')}</span><div className="account-identity"><strong>{account.name}</strong><small>{account.email}</small></div><span className={`account-state account-state--${account.isActive ? 'active' : 'inactive'}`}>{account.isActive ? 'Active' : 'Inactive'}</span><select disabled={Boolean(busyAction) || account._id === user._id} aria-label={`Role for ${account.name}`} value={account.role} onChange={(event) => changeAccountRole(account, event.target.value)}><option value="admin">Admin</option><option value="driver" disabled={!drivers.some((driver) => driver.user._id === account._id)}>Driver</option><option value="customer">Customer</option></select><button className="button button--secondary" disabled={Boolean(busyAction) || account._id === user._id} onClick={() => update(`/users/${account._id}`, { isActive: !account.isActive }, `${account.isActive ? 'Deactivate' : 'Activate'} ${account.name}?`)}>{account.isActive ? 'Deactivate' : 'Activate'}</button></div>)}</div> : !directoryLoading && <div className="account-directory-empty"><Search /><h3>No matching accounts</h3><p>Change or clear the filters to see more people.</p></div>}
       <div className="directory-pagination"><span>{pagination.total} total {pagination.total === 1 ? 'account' : 'accounts'}</span><div><button type="button" className="button button--secondary" disabled={directoryLoading || pagination.page <= 1} onClick={() => setDirectoryPage((current) => current - 1)}><ArrowLeft /> Previous</button><button type="button" className="button button--secondary" disabled={directoryLoading || pagination.page >= pagination.totalPages} onClick={() => setDirectoryPage((current) => current + 1)}>Next <ArrowRight /></button></div></div>
     </section>}
   </>;

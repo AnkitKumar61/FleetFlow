@@ -107,6 +107,57 @@ describe('resource management invariants', () => {
     expect((await Vehicle.findById(vehicle._id)).isActive).toBe(true);
   });
 
+  it('blocks a Driver to Customer role change while a delivery is active', async () => {
+    const driverUser = await User.create({ name: 'Busy Driver', email: 'busy-role@example.com', role: 'driver', passwordHash: 'unused' });
+    const profile = await Driver.create({ user: driverUser._id, licenseNumber: 'BUSY-ROLE', licenseExpiresAt: new Date(Date.now() + 86400000), status: 'busy', currentDelivery: admin._id });
+
+    const response = await request(app).patch(`/api/v1/users/${driverUser._id}`).set('Authorization', `Bearer ${token}`).send({ role: 'customer' }).expect(409);
+
+    expect(response.body.error.code).toBe('DRIVER_ACTIVE_DELIVERY');
+    expect((await User.findById(driverUser._id)).role).toBe('driver');
+    expect((await Driver.findById(profile._id)).isActive).toBe(true);
+    expect(await AuditLog.findOne({ entityId: driverUser._id, action: 'user.role_changed' })).toBeNull();
+  });
+
+  it('deactivates a former driver atomically and safely reactivates a valid profile', async () => {
+    const driverUser = await User.create({
+      name: 'Role Driver', email: 'role-driver@example.com', phone: '+919876543230', phoneVerifiedAt: new Date(), role: 'driver', passwordHash: 'unused'
+    });
+    const profile = await Driver.create({ user: driverUser._id, licenseNumber: 'ROLE-CHANGE', licenseExpiresAt: new Date(Date.now() + 86400000), status: 'available' });
+
+    await request(app).patch(`/api/v1/users/${driverUser._id}`).set('Authorization', `Bearer ${token}`).send({ role: 'customer' }).expect(200);
+    const [customer, inactiveProfile, firstAudit] = await Promise.all([
+      User.findById(driverUser._id), Driver.findById(profile._id), AuditLog.findOne({ entityId: driverUser._id, action: 'user.role_changed' }).sort({ createdAt: -1 })
+    ]);
+    expect(customer.role).toBe('customer');
+    expect(inactiveProfile.status).toBe('offline');
+    expect(inactiveProfile.isActive).toBe(false);
+    expect(firstAudit.metadata.oldValues).toMatchObject({ role: 'driver', driverStatus: 'available', driverIsActive: true });
+    expect(firstAudit.metadata.newValues).toMatchObject({ role: 'customer', driverStatus: 'offline', driverIsActive: false });
+
+    await request(app).patch(`/api/v1/users/${driverUser._id}`).set('Authorization', `Bearer ${token}`).send({ role: 'driver' }).expect(200);
+    const [restoredUser, restoredProfile] = await Promise.all([User.findById(driverUser._id), Driver.findById(profile._id)]);
+    expect(restoredUser.role).toBe('driver');
+    expect(restoredProfile.status).toBe('offline');
+    expect(restoredProfile.isActive).toBe(true);
+    expect(await AuditLog.countDocuments({ entityId: driverUser._id, action: 'user.role_changed' })).toBe(2);
+  });
+
+  it('requires a verified phone and valid licence before restoring the Driver role', async () => {
+    const formerDriver = await User.create({ name: 'Former Driver', email: 'former@example.com', role: 'customer', passwordHash: 'unused' });
+    const profile = await Driver.create({ user: formerDriver._id, licenseNumber: 'FORMER-DRIVER', licenseExpiresAt: new Date(Date.now() - 86400000), status: 'offline', isActive: false });
+
+    const noPhone = await request(app).patch(`/api/v1/users/${formerDriver._id}`).set('Authorization', `Bearer ${token}`).send({ role: 'driver' }).expect(409);
+    expect(noPhone.body.error.code).toBe('VERIFIED_PHONE_REQUIRED');
+    formerDriver.phone = '+919876543231';
+    formerDriver.phoneVerifiedAt = new Date();
+    await formerDriver.save();
+    const expired = await request(app).patch(`/api/v1/users/${formerDriver._id}`).set('Authorization', `Bearer ${token}`).send({ role: 'driver' }).expect(409);
+    expect(expired.body.error.code).toBe('DRIVER_LICENCE_EXPIRED');
+    expect((await User.findById(formerDriver._id)).role).toBe('customer');
+    expect((await Driver.findById(profile._id)).isActive).toBe(false);
+  });
+
   it('returns only notifications that belong to the signed-in user', async () => {
     const driver = await User.create({ name: 'Driver', email: 'notice-driver@example.com', role: 'driver', passwordHash: await User.hashPassword('Password1') });
     const login = await request(app).post('/api/v1/auth/login').send({ email: driver.email, password: 'Password1' });
