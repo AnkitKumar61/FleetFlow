@@ -4,9 +4,11 @@ import mongoose from 'mongoose';
 import { Delivery, DELIVERY_STATUS } from '../models/delivery.js';
 import { Driver } from '../models/driver.js';
 import { Vehicle } from '../models/vehicle.js';
+import { Notification } from '../models/notification.js';
 import { AppError } from '../utils/app-error.js';
 import { recordAudit } from './audit.service.js';
-import { emitDeliveryUpdate, emitLocationUpdate } from './realtime.service.js';
+import { createSignedProofUrl, deleteProofImage, uploadProofImage } from './image-storage.service.js';
+import { emitAdminAlert, emitDeliveryUpdate, emitLocationUpdate, emitUserAlert } from './realtime.service.js';
 import { scheduleDelayCheck } from './queue.service.js';
 
 const transitionRules = {
@@ -41,7 +43,7 @@ export async function createDelivery(input, actor, requestId) {
     proof: { otpHash: await bcrypt.hash(deliveryOtp, 10) },
     history: [{ status: DELIVERY_STATUS.PENDING, note: 'Delivery request created', actor: actor._id }]
   });
-  await recordAudit({ actor: actor._id, action: 'delivery.created', entityType: 'Delivery', entityId: delivery._id, requestId });
+  await recordAudit({ actor: actor._id, action: 'delivery.created', entityType: 'Delivery', entityId: delivery._id, metadata: { oldValues: null, newValues: { status: delivery.status, trackingNumber: delivery.trackingNumber } }, requestId });
   scheduleDelayCheck(delivery).catch(() => {});
   await emitDeliveryUpdate(delivery);
   return delivery;
@@ -110,22 +112,214 @@ export async function assignDelivery(deliveryId, input, actor, requestId) {
         { status: 'in_use', currentDelivery: delivery._id }, { new: true, session }
       );
       if (!vehicle) throw new AppError(409, 'VEHICLE_UNAVAILABLE', 'The vehicle is unavailable or does not have enough capacity');
+      const previousStatus = delivery.status;
       delivery.assignedDriver = driver._id;
       delivery.assignedVehicle = vehicle._id;
       delivery.liveLocation = undefined;
       delivery.status = DELIVERY_STATUS.ASSIGNED;
       delivery.history.push({ status: DELIVERY_STATUS.ASSIGNED, actor: actor._id, note: 'Driver and vehicle assigned' });
       assigned = await delivery.save({ session });
-      await recordAudit({ actor: actor._id, action: 'delivery.assigned', entityType: 'Delivery', entityId: delivery._id, metadata: { driverId: driver._id, vehicleId: vehicle._id }, requestId, session });
+      await recordAudit({ actor: actor._id, action: 'delivery.assigned', entityType: 'Delivery', entityId: delivery._id, metadata: { oldValues: { status: previousStatus, driverId: null, vehicleId: null }, newValues: { status: DELIVERY_STATUS.ASSIGNED, driverId: driver._id, vehicleId: vehicle._id } }, requestId, session });
     });
   } finally { await session.endSession(); }
   await emitDeliveryUpdate(assigned);
   return assigned;
 }
 
+export async function rejectAssignment(deliveryId, input, actor, requestId) {
+  const session = await mongoose.startSession();
+  let rejected;
+  let notification;
+  let previousDriverId;
+  try {
+    await session.withTransaction(async () => {
+      const driver = await Driver.findOne({ user: actor._id }).session(session);
+      if (!driver) throw new AppError(403, 'DRIVER_PROFILE_REQUIRED', 'A driver profile is required to reject an assignment');
+
+      const delivery = await Delivery.findOne({
+        _id: deliveryId,
+        status: DELIVERY_STATUS.ASSIGNED,
+        assignedDriver: driver._id
+      }).session(session);
+      if (!delivery) throw new AppError(409, 'ASSIGNMENT_NOT_REJECTABLE', 'This assignment is no longer available to reject');
+
+      previousDriverId = delivery.assignedDriver;
+      const previousVehicleId = delivery.assignedVehicle;
+      const releasedDriver = await Driver.findOneAndUpdate(
+        { _id: previousDriverId, currentDelivery: delivery._id },
+        { status: 'available', currentDelivery: null },
+        { new: true, session }
+      );
+      const releasedVehicle = await Vehicle.findOneAndUpdate(
+        { _id: previousVehicleId, currentDelivery: delivery._id },
+        { status: 'available', currentDelivery: null },
+        { new: true, session }
+      );
+      if (!releasedDriver || !releasedVehicle) {
+        throw new AppError(409, 'ASSIGNMENT_RESOURCE_CONFLICT', 'The assigned resources changed. Refresh and try again');
+      }
+
+      delivery.status = DELIVERY_STATUS.PENDING;
+      delivery.assignedDriver = null;
+      delivery.assignedVehicle = null;
+      delivery.liveLocation = undefined;
+      delivery.history.push({
+        status: DELIVERY_STATUS.PENDING,
+        actor: actor._id,
+        note: `Assignment rejected by driver: ${input.reason}`
+      });
+      rejected = await delivery.save({ session });
+
+      await recordAudit({
+        actor: actor._id,
+        action: 'delivery.assignment_rejected',
+        entityType: 'Delivery',
+        entityId: delivery._id,
+        metadata: {
+          reason: input.reason,
+          previousDriverId,
+          previousVehicleId,
+          oldValues: { status: DELIVERY_STATUS.ASSIGNED, driverId: previousDriverId, vehicleId: previousVehicleId },
+          newValues: { status: DELIVERY_STATUS.PENDING, driverId: null, vehicleId: null }
+        },
+        requestId,
+        session
+      });
+
+      [notification] = await Notification.create([{
+        key: `delivery-rejected:${delivery._id}:${crypto.randomUUID()}`,
+        audienceRole: 'admin',
+        type: 'delivery_rejected',
+        delivery: delivery._id,
+        message: `${delivery.trackingNumber} was rejected by the assigned driver: ${input.reason}`
+      }], { session });
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  await emitDeliveryUpdate(rejected, previousDriverId);
+  emitAdminAlert(notification);
+  return rejected;
+}
+
+export async function reassignDelivery(deliveryId, input, actor, requestId) {
+  const session = await mongoose.startSession();
+  let reassigned;
+  let previousDriverId;
+  let newDriverId;
+  let previousDriverUserId;
+  let newDriverUserId;
+  let previousNotification;
+  let newNotification;
+  try {
+    await session.withTransaction(async () => {
+      const delivery = await Delivery.findOne({
+        _id: deliveryId,
+        status: { $in: [DELIVERY_STATUS.ASSIGNED, DELIVERY_STATUS.ACCEPTED] },
+        assignedDriver: input.expectedDriverId,
+        assignedVehicle: input.expectedVehicleId
+      }).session(session);
+      if (!delivery) throw new AppError(409, 'DELIVERY_NOT_REASSIGNABLE', 'Only an assigned delivery that has not been picked up can be reassigned');
+
+      previousDriverId = delivery.assignedDriver;
+      const previousVehicleId = delivery.assignedVehicle;
+      newDriverId = new mongoose.Types.ObjectId(input.driverId);
+      const newVehicleId = new mongoose.Types.ObjectId(input.vehicleId);
+      if (previousDriverId.toString() === newDriverId.toString()) {
+        throw new AppError(422, 'DIFFERENT_DRIVER_REQUIRED', 'Select a different driver for reassignment');
+      }
+
+      const previousDriver = await Driver.findOneAndUpdate(
+        { _id: previousDriverId, currentDelivery: delivery._id },
+        { status: 'available', currentDelivery: null },
+        { new: true, session }
+      );
+      const previousVehicle = await Vehicle.findOneAndUpdate(
+        { _id: previousVehicleId, currentDelivery: delivery._id },
+        { status: 'available', currentDelivery: null },
+        { new: true, session }
+      );
+      if (!previousDriver || !previousVehicle) {
+        throw new AppError(409, 'ASSIGNMENT_RESOURCE_CONFLICT', 'The current assignment changed. Refresh and try again');
+      }
+
+      const newDriver = await Driver.findOneAndUpdate(
+        { _id: newDriverId, isActive: true, status: 'available', currentDelivery: null, licenseExpiresAt: { $gt: new Date() } },
+        { status: 'busy', currentDelivery: delivery._id },
+        { new: true, session }
+      );
+      if (!newDriver) throw new AppError(409, 'DRIVER_UNAVAILABLE', 'The selected replacement driver is no longer available');
+
+      const newVehicle = await Vehicle.findOneAndUpdate(
+        { _id: newVehicleId, isActive: true, status: 'available', currentDelivery: null, capacityKg: { $gte: delivery.packageWeightKg } },
+        { status: 'in_use', currentDelivery: delivery._id },
+        { new: true, session }
+      );
+      if (!newVehicle) throw new AppError(409, 'VEHICLE_UNAVAILABLE', 'The replacement vehicle is unavailable or does not have enough capacity');
+
+      previousDriverUserId = previousDriver.user;
+      newDriverUserId = newDriver.user;
+      const previousStatus = delivery.status;
+      delivery.assignedDriver = newDriver._id;
+      delivery.assignedVehicle = newVehicle._id;
+      delivery.status = DELIVERY_STATUS.ASSIGNED;
+      delivery.liveLocation = undefined;
+      delivery.history.push({
+        status: DELIVERY_STATUS.ASSIGNED,
+        actor: actor._id,
+        note: `Resources reassigned by admin: ${input.reason}`
+      });
+      reassigned = await delivery.save({ session });
+
+      await recordAudit({
+        actor: actor._id,
+        action: 'delivery.reassigned',
+        entityType: 'Delivery',
+        entityId: delivery._id,
+        metadata: {
+          reason: input.reason,
+          previousStatus,
+          previousDriverId,
+          previousVehicleId,
+          newDriverId: newDriver._id,
+          newVehicleId: newVehicle._id,
+          oldValues: { status: previousStatus, driverId: previousDriverId, vehicleId: previousVehicleId },
+          newValues: { status: DELIVERY_STATUS.ASSIGNED, driverId: newDriver._id, vehicleId: newVehicle._id }
+        },
+        requestId,
+        session
+      });
+
+      [previousNotification] = await Notification.create([{
+        key: `delivery-reassigned-away:${delivery._id}:${crypto.randomUUID()}`,
+        recipient: previousDriver.user,
+        type: 'delivery_reassigned',
+        delivery: delivery._id,
+        message: `${delivery.trackingNumber} was reassigned to another driver: ${input.reason}`
+      }], { session });
+      [newNotification] = await Notification.create([{
+        key: `delivery-reassigned-to:${delivery._id}:${crypto.randomUUID()}`,
+        recipient: newDriver.user,
+        type: 'delivery_reassigned',
+        delivery: delivery._id,
+        message: `${delivery.trackingNumber} has been assigned to you: ${input.reason}`
+      }], { session });
+    });
+  } finally {
+    await session.endSession();
+  }
+
+  await emitDeliveryUpdate(reassigned, [previousDriverId, newDriverId]);
+  emitUserAlert(previousNotification, previousDriverUserId);
+  emitUserAlert(newNotification, newDriverUserId);
+  return reassigned;
+}
+
 export async function transitionDelivery(deliveryId, input, actor, requestId) {
   const delivery = await getAuthorizedDelivery(deliveryId, actor);
   const assignedDriver = delivery.assignedDriver;
+  const previousStatus = delivery.status;
   const roles = transitionRules[delivery.status]?.[input.status];
   if (!roles?.includes(actor.role)) throw new AppError(409, 'INVALID_STATUS_TRANSITION', `Cannot move a delivery from ${delivery.status} to ${input.status}`);
   delivery.status = input.status;
@@ -141,7 +335,7 @@ export async function transitionDelivery(deliveryId, input, actor, requestId) {
     delivery.assignedVehicle = null;
     await delivery.save();
   }
-  await recordAudit({ actor: actor._id, action: input.status === 'cancelled' ? 'delivery.cancelled' : 'delivery.status_changed', entityType: 'Delivery', entityId: delivery._id, metadata: { status: input.status }, requestId });
+  await recordAudit({ actor: actor._id, action: input.status === 'cancelled' ? 'delivery.cancelled' : 'delivery.status_changed', entityType: 'Delivery', entityId: delivery._id, metadata: { oldValues: { status: previousStatus }, newValues: { status: input.status }, note: input.note }, requestId });
   await emitDeliveryUpdate(delivery, assignedDriver);
   return delivery;
 }
@@ -159,18 +353,30 @@ export async function submitProof(deliveryId, input, actor, requestId) {
   const full = await Delivery.findById(deliveryId).select('+proof.otpHash');
   if (!full.proof?.otpHash) throw new AppError(409, 'DELIVERY_OTP_NOT_CONFIGURED', 'This delivery does not have a verification code');
   if (!(await bcrypt.compare(input.otp, full.proof.otpHash))) throw new AppError(422, 'INVALID_DELIVERY_OTP', 'The delivery verification code is incorrect');
+  const proofImage = input.imageFile ? await uploadProofImage({ file: input.imageFile, trackingNumber: delivery.trackingNumber }) : undefined;
   delivery.status = DELIVERY_STATUS.DELIVERED;
   if (delivery.liveLocation) {
     delivery.liveLocation.sharing = false;
     delivery.liveLocation.updatedAt = new Date();
   }
-  delivery.proof = { recipientName: input.recipientName, deliveredAt: new Date(), driverNotes: input.driverNotes, imagePath: input.imagePath };
+  delivery.proof = { recipientName: input.recipientName, deliveredAt: new Date(), driverNotes: input.driverNotes, image: proofImage };
   delivery.history.push({ status: DELIVERY_STATUS.DELIVERED, actor: actor._id, note: `Received by ${input.recipientName}` });
-  await delivery.save();
+  try {
+    await delivery.save();
+  } catch (error) {
+    await deleteProofImage(proofImage?.fileId).catch(() => {});
+    throw error;
+  }
   await releaseResources(delivery);
-  await recordAudit({ actor: actor._id, action: 'delivery.proof_submitted', entityType: 'Delivery', entityId: delivery._id, requestId });
+  await recordAudit({ actor: actor._id, action: 'delivery.proof_submitted', entityType: 'Delivery', entityId: delivery._id, metadata: { oldValues: { status: DELIVERY_STATUS.IN_TRANSIT }, newValues: { status: DELIVERY_STATUS.DELIVERED, recipientName: input.recipientName, proofImageStored: Boolean(proofImage) } }, requestId });
   await emitDeliveryUpdate(delivery);
   return delivery;
+}
+
+export async function getProofImageAccess(deliveryId, actor) {
+  const delivery = await getAuthorizedDelivery(deliveryId, actor);
+  if (!delivery.proof?.image?.filePath) throw new AppError(404, 'PROOF_IMAGE_NOT_FOUND', 'This delivery does not have a proof image');
+  return createSignedProofUrl(delivery.proof.image.filePath);
 }
 
 export async function updateLiveLocation(deliveryId, input, actor) {

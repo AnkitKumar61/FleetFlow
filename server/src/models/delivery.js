@@ -58,7 +58,13 @@ const deliverySchema = new mongoose.Schema({
     otpHash: { type: String, select: false },
     deliveredAt: Date,
     driverNotes: String,
-    imagePath: String
+    imagePath: String,
+    image: {
+      provider: { type: String, enum: ['imagekit'] },
+      fileId: String,
+      filePath: String,
+      originalName: String
+    }
   },
   liveLocation: { type: liveLocationSchema, default: undefined },
   delayedNotifiedAt: Date

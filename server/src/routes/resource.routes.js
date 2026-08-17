@@ -6,6 +6,10 @@ import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../utils/async-handler.js';
 
 const id = z.object({ id: z.string().regex(/^[a-f\d]{24}$/i) });
+const auditQuery = z.object({
+  actor: z.string().regex(/^[a-f\d]{24}$/i).optional(),
+  action: z.string().trim().min(1).max(80).regex(/^[a-z][a-z0-9_.-]*$/).optional()
+});
 const createUserBody = z.object({
   name: z.string().trim().min(2).max(80),
   email: z.string().trim().email().max(160),
@@ -31,5 +35,7 @@ resourceRouter.patch('/drivers/:id', authorize('admin'), validate({ params: id, 
 resourceRouter.get('/vehicles', authorize('admin'), asyncHandler(controller.listVehicles));
 resourceRouter.post('/vehicles', authorize('admin'), validate({ body: z.object({ registrationNumber: z.string().min(3).max(30), type: z.enum(['bike', 'van', 'truck']), capacityKg: z.coerce.number().positive(), status: z.enum(['available', 'in_use', 'maintenance']).default('available') }) }), asyncHandler(controller.createVehicle));
 resourceRouter.patch('/vehicles/:id', authorize('admin'), validate({ params: id, body: z.object({ status: z.enum(['available', 'in_use', 'maintenance']).optional(), isActive: z.boolean().optional(), capacityKg: z.coerce.number().positive().optional() }) }), asyncHandler(controller.updateVehicle));
-resourceRouter.get('/audit-logs', authorize('admin'), asyncHandler(controller.listAudits));
-resourceRouter.get('/notifications', authorize('admin'), asyncHandler(controller.listNotifications));
+resourceRouter.get('/audit-logs', authorize('admin'), validate({ query: auditQuery }), asyncHandler(controller.listAudits));
+resourceRouter.get('/notifications', asyncHandler(controller.listNotifications));
+resourceRouter.patch('/notifications/read-all', asyncHandler(controller.markAllNotificationsRead));
+resourceRouter.patch('/notifications/:id/read', validate({ params: id }), asyncHandler(controller.markNotificationRead));

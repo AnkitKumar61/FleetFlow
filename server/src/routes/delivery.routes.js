@@ -1,20 +1,23 @@
 import { Router } from 'express';
 import multer from 'multer';
-import { env } from '../config/env.js';
 import * as controller from '../controllers/delivery.controller.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../utils/async-handler.js';
-import { assignBody, createDeliveryBody, deliveryIdParams, listDeliveryQuery, liveLocationBody, proofBody, transitionBody } from '../validation/delivery.validation.js';
+import { assignBody, createDeliveryBody, deliveryIdParams, listDeliveryQuery, liveLocationBody, proofBody, reassignBody, rejectAssignmentBody, transitionBody } from '../validation/delivery.validation.js';
 import { AppError } from '../utils/app-error.js';
 
-const upload = multer({ dest: env.UPLOAD_DIR, limits: { fileSize: 5 * 1024 * 1024 }, fileFilter: (_req, file, cb) => file.mimetype.startsWith('image/') ? cb(null, true) : cb(new AppError(422, 'INVALID_FILE', 'Proof attachment must be an image')) });
+const proofMimeTypes = new Set(['image/jpeg', 'image/png', 'image/webp']);
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 }, fileFilter: (_req, file, cb) => proofMimeTypes.has(file.mimetype) ? cb(null, true) : cb(new AppError(422, 'INVALID_FILE', 'Proof image must be a JPEG, PNG, or WebP file')) });
 export const deliveryRouter = Router();
 deliveryRouter.use(authenticate);
 deliveryRouter.get('/', validate({ query: listDeliveryQuery }), asyncHandler(controller.list));
 deliveryRouter.post('/', authorize('customer', 'admin'), validate({ body: createDeliveryBody }), asyncHandler(controller.create));
 deliveryRouter.get('/:id', validate({ params: deliveryIdParams }), asyncHandler(controller.get));
+deliveryRouter.get('/:id/proof-image', validate({ params: deliveryIdParams }), asyncHandler(controller.proofImage));
 deliveryRouter.post('/:id/assign', authorize('admin'), validate({ params: deliveryIdParams, body: assignBody }), asyncHandler(controller.assign));
+deliveryRouter.post('/:id/reassign', authorize('admin'), validate({ params: deliveryIdParams, body: reassignBody }), asyncHandler(controller.reassign));
+deliveryRouter.post('/:id/reject', authorize('driver'), validate({ params: deliveryIdParams, body: rejectAssignmentBody }), asyncHandler(controller.rejectAssignment));
 deliveryRouter.patch('/:id/status', authorize('customer', 'driver', 'admin'), validate({ params: deliveryIdParams, body: transitionBody }), asyncHandler(controller.transition));
 deliveryRouter.patch('/:id/location', authorize('driver'), validate({ params: deliveryIdParams, body: liveLocationBody }), asyncHandler(controller.updateLocation));
 deliveryRouter.post('/:id/proof', authorize('driver'), upload.single('image'), validate({ params: deliveryIdParams, body: proofBody }), asyncHandler(controller.proof));

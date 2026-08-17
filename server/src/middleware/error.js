@@ -23,6 +23,10 @@ export function errorHandler(error, req, res, _next) {
     return res.status(409).json({ success: false, error: { code: 'DUPLICATE_RESOURCE', message: 'A resource with that value already exists' }, requestId: req.id });
   }
 
+  if (error?.code === 'LIMIT_FILE_SIZE') {
+    return res.status(413).json({ success: false, error: { code: 'PROOF_IMAGE_TOO_LARGE', message: 'Proof image must be 5 MB or smaller' }, requestId: req.id });
+  }
+
   const known = error instanceof AppError;
   const statusCode = known ? error.statusCode : 500;
   if (!known) logger.error({ err: error, requestId: req.id }, 'Unhandled request error');
@@ -37,4 +41,3 @@ export function errorHandler(error, req, res, _next) {
     requestId: req.id
   });
 }
-

@@ -8,8 +8,9 @@ export async function emitDeliveryUpdate(delivery, assignedDriver = delivery.ass
   if (!io) return;
   const payload = { deliveryId: delivery._id, status: delivery.status, updatedAt: delivery.updatedAt };
   let audience = io.to('role:admin').to(`user:${delivery.customer}`).to(`delivery:${delivery._id}`);
-  if (assignedDriver) {
-    const driver = await Driver.findById(assignedDriver).select('user');
+  const driverIds = (Array.isArray(assignedDriver) ? assignedDriver : [assignedDriver]).filter(Boolean);
+  for (const driverId of driverIds) {
+    const driver = await Driver.findById(driverId).select('user');
     if (driver?.user) audience = audience.to(`user:${driver.user}`);
   }
   audience.emit('delivery:updated', payload);
@@ -28,4 +29,8 @@ export async function emitLocationUpdate(delivery) {
 
 export function emitAdminAlert(notification) {
   io?.to('role:admin').emit('notification:created', notification);
+}
+
+export function emitUserAlert(notification, userId) {
+  io?.to(`user:${userId}`).emit('notification:created', notification);
 }

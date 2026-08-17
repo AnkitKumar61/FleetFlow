@@ -25,6 +25,7 @@ const delivery = {
 
 describe('delivery detail actions', () => {
   beforeEach(() => {
+    user.role = 'customer';
     api.get.mockReset();
     api.patch.mockReset();
     api.post.mockReset();
@@ -71,5 +72,90 @@ describe('delivery detail actions', () => {
     expect(await screen.findByRole('heading', { name: 'Live driver tracking' })).toBeInTheDocument();
     expect(screen.getByText('Tracking ended')).toBeInTheDocument();
     expect(screen.getByText('Rohan Driver')).toBeInTheDocument();
+  });
+
+  it('requires a reason before the driver can reject an assignment', async () => {
+    user.role = 'driver';
+    api.get.mockResolvedValue({ data: { data: {
+      ...delivery,
+      status: 'assigned',
+      assignedDriver: { user: { name: 'Rohan Driver' } },
+      assignedVehicle: { registrationNumber: 'MH-12-TEST' }
+    } } });
+    api.post.mockResolvedValue({ data: { data: { ...delivery, status: 'pending' } } });
+    render(<MemoryRouter initialEntries={['/deliveries/delivery-id']}><Routes><Route path="/deliveries/:id" element={<DeliveryDetailPage />} /><Route path="/deliveries" element={<p>Delivery manifest</p>} /></Routes></MemoryRouter>);
+
+    expect(await screen.findByRole('button', { name: 'Accept delivery' })).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Reject delivery' }));
+    const confirmButton = screen.getByRole('button', { name: 'Confirm rejection' });
+    expect(confirmButton).toBeDisabled();
+
+    await userEvent.type(screen.getByRole('textbox', { name: 'Rejection reason' }), 'Vehicle has a brake warning');
+    await userEvent.click(confirmButton);
+
+    expect(api.post).toHaveBeenCalledWith('/deliveries/delivery-id/reject', { reason: 'Vehicle has a brake warning' });
+    expect(await screen.findByText('Delivery manifest')).toBeInTheDocument();
+  });
+
+  it('shows the previous assignment and sends concurrency-safe reassignment details', async () => {
+    user.role = 'admin';
+    const assignedDelivery = {
+      ...delivery,
+      status: 'accepted',
+      assignedDriver: { _id: 'old-driver', user: { name: 'Current Driver' } },
+      assignedVehicle: { _id: 'old-vehicle', registrationNumber: 'MH-12-OLD' }
+    };
+    api.get.mockImplementation((url) => {
+      if (url === '/drivers') return Promise.resolve({ data: { data: [{ _id: 'new-driver', isActive: true, status: 'available', user: { name: 'Replacement Driver' } }] } });
+      if (url === '/vehicles') return Promise.resolve({ data: { data: [{ _id: 'new-vehicle', isActive: true, status: 'available', registrationNumber: 'MH-12-NEW', capacityKg: 50 }] } });
+      return Promise.resolve({ data: { data: assignedDelivery } });
+    });
+    api.post.mockResolvedValue({ data: { data: assignedDelivery } });
+    render(<MemoryRouter initialEntries={['/deliveries/delivery-id']}><Routes><Route path="/deliveries/:id" element={<DeliveryDetailPage />} /></Routes></MemoryRouter>);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Reassign resources' }));
+    expect(screen.getAllByText('Current Driver')).toHaveLength(2);
+    expect(screen.getByText('MH-12-OLD')).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Replacement driver' }), 'new-driver');
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Replacement vehicle' }), 'new-vehicle');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Reassignment reason' }), 'Current driver reported a family emergency');
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm reassignment' }));
+
+    expect(api.post).toHaveBeenCalledWith('/deliveries/delivery-id/reassign', {
+      driverId: 'new-driver',
+      vehicleId: 'new-vehicle',
+      expectedDriverId: 'old-driver',
+      expectedVehicleId: 'old-vehicle',
+      reason: 'Current driver reported a family emergency'
+    });
+  });
+
+  it('includes an optional proof image in the delivery completion form', async () => {
+    user.role = 'driver';
+    api.get.mockResolvedValue({ data: { data: { ...delivery, status: 'in_transit', assignedDriver: { user: { name: 'Rohan Driver' } } } } });
+    api.post.mockResolvedValue({ data: { data: { ...delivery, status: 'delivered' } } });
+    render(<MemoryRouter initialEntries={['/deliveries/delivery-id']}><Routes><Route path="/deliveries/:id" element={<DeliveryDetailPage />} /></Routes></MemoryRouter>);
+
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Recipient name' }), 'Test Recipient');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Delivery OTP' }), '2468');
+    const image = new File([new Uint8Array([137, 80, 78, 71])], 'proof.png', { type: 'image/png' });
+    await userEvent.upload(screen.getByLabelText(/Proof image/i), image);
+    await userEvent.click(screen.getByRole('button', { name: 'Submit proof & deliver' }));
+
+    const form = api.post.mock.calls[0][1];
+    expect(api.post.mock.calls[0][0]).toBe('/deliveries/delivery-id/proof');
+    expect(form.get('image')).toBe(image);
+    expect(form.get('recipientName')).toBe('Test Recipient');
+  });
+
+  it('loads a short-lived proof image link for an authorized viewer', async () => {
+    api.get.mockImplementation((path) => path.endsWith('/proof-image')
+      ? Promise.resolve({ data: { data: { url: 'https://signed.example/proof.png', expiresIn: 300 } } })
+      : Promise.resolve({ data: { data: { ...delivery, status: 'delivered', proof: { image: { provider: 'imagekit', filePath: '/fleetflow/proofs/proof.png' } } } } }));
+    render(<MemoryRouter initialEntries={['/deliveries/delivery-id']}><Routes><Route path="/deliveries/:id" element={<DeliveryDetailPage />} /></Routes></MemoryRouter>);
+
+    await userEvent.click(await screen.findByRole('button', { name: 'View proof image' }));
+    expect(await screen.findByRole('img', { name: 'Delivery proof for FF-UI-1001' })).toHaveAttribute('src', 'https://signed.example/proof.png');
+    expect(api.get).toHaveBeenCalledWith('/deliveries/delivery-id/proof-image');
   });
 });
