@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, ArrowRight, RotateCcw, Search, UserPlus, X } from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { ArrowLeft, ArrowRight, LockKeyhole, RotateCcw, Search, UserPlus, X } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../context/auth-context.jsx';
 import { ErrorState, Loading, PageHeader, StatusBadge } from '../components/ui.jsx';
@@ -80,11 +81,13 @@ export default function ResourcesPage() {
   useEffect(() => {
     const timer = setTimeout(() => {
       const search = directorySearch.trim();
-      setDirectoryFilters((current) => current.search === search ? current : { ...current, search });
-      setDirectoryPage(1);
+      if (directoryFilters.search !== search) {
+        setDirectoryFilters((current) => ({ ...current, search }));
+        setDirectoryPage(1);
+      }
     }, 250);
     return () => clearTimeout(timer);
-  }, [directorySearch]);
+  }, [directorySearch, directoryFilters.search]);
   useEffect(() => { loadUsers(); }, [directoryFilters, directoryPage]);
 
   const update = async (path, body, confirmation) => {
@@ -161,6 +164,7 @@ export default function ResourcesPage() {
   if (loadError) return <ErrorState message={loadError} retry={loadResources}/>;
   if (!drivers || !vehicles) return <Loading/>;
   const visibleDrivers = drivers.filter((driver) => driver.user?.role === 'driver');
+  const driverByUserId = new Map(drivers.map((driver) => [driver.user?._id, driver]));
 
   return <>
     <PageHeader title="Resource board" description="Availability, allocation and account authority in one operating view."/>
@@ -213,7 +217,28 @@ export default function ResourcesPage() {
         <button type="button" className="text-button directory-reset" onClick={clearDirectoryFilters} disabled={!filtersActive}><RotateCcw /> Clear filters</button>
       </div>
       <div className="account-directory-summary" role="status"><span>{directoryLoading ? 'Updating accounts…' : pagination.total ? `Showing ${firstVisibleUser}–${lastVisibleUser} of ${pagination.total}` : 'No accounts match these filters'}</span><span>Page {pagination.page} of {pagination.totalPages}</span></div>
-      {directoryError ? <div className="directory-error"><p>{directoryError}</p><button type="button" className="text-button" onClick={() => loadUsers()}>Try again</button></div> : users.length ? <div className="resource-list" aria-busy={directoryLoading}>{users.map((account) => <div className="resource-row user-row" key={account._id}><span className="avatar">{account.name.split(' ').map((word) => word[0]).slice(0, 2).join('')}</span><div className="account-identity"><strong>{account.name}</strong><small>{account.email}</small></div><span className={`account-state account-state--${account.isActive ? 'active' : 'inactive'}`}>{account.isActive ? 'Active' : 'Inactive'}</span><select disabled={Boolean(busyAction) || account._id === user._id} aria-label={`Role for ${account.name}`} value={account.role} onChange={(event) => changeAccountRole(account, event.target.value)}><option value="admin">Admin</option><option value="driver" disabled={!drivers.some((driver) => driver.user._id === account._id)}>Driver</option><option value="customer">Customer</option></select><button className="button button--secondary" disabled={Boolean(busyAction) || account._id === user._id} onClick={() => update(`/users/${account._id}`, { isActive: !account.isActive }, `${account.isActive ? 'Deactivate' : 'Activate'} ${account.name}?`)}>{account.isActive ? 'Deactivate' : 'Activate'}</button></div>)}</div> : !directoryLoading && <div className="account-directory-empty"><Search /><h3>No matching accounts</h3><p>Change or clear the filters to see more people.</p></div>}
+      {directoryError ? <div className="directory-error"><p>{directoryError}</p><button type="button" className="text-button" onClick={() => loadUsers()}>Try again</button></div> : users.length ? <div className="resource-list" aria-busy={directoryLoading}>{users.map((account) => {
+        const driverProfile = driverByUserId.get(account._id);
+        const activeDelivery = driverProfile?.currentDelivery;
+        const roleLocked = account.role === 'driver' && Boolean(activeDelivery || driverProfile?.status === 'busy');
+        const deliveryId = typeof activeDelivery === 'object' ? activeDelivery?._id : activeDelivery;
+        const trackingNumber = typeof activeDelivery === 'object' ? activeDelivery?.trackingNumber : null;
+        const roleLockId = `role-lock-${account._id}`;
+        return <div className={`resource-row user-row${roleLocked ? ' user-row--role-locked' : ''}`} key={account._id}>
+          <span className="avatar">{account.name.split(' ').map((word) => word[0]).slice(0, 2).join('')}</span>
+          <div className="account-identity"><strong>{account.name}</strong><small>{account.email}</small></div>
+          <span className={`account-state account-state--${account.isActive ? 'active' : 'inactive'}`}>{account.isActive ? 'Active' : 'Inactive'}</span>
+          <div className="account-role-control">
+            <select disabled={Boolean(busyAction) || account._id === user._id || roleLocked} aria-label={`Role for ${account.name}`} aria-describedby={roleLocked ? roleLockId : undefined} value={account.role} onChange={(event) => changeAccountRole(account, event.target.value)}><option value="admin">Admin</option><option value="driver" disabled={!driverProfile}>Driver</option><option value="customer">Customer</option></select>
+            {roleLocked && <div className="role-lock-note" id={roleLockId}>
+              <span className="role-lock-label"><LockKeyhole aria-hidden="true"/> Role locked</span>
+              <span>Role cannot be changed because this driver has an active delivery.</span>
+              {deliveryId && <Link to={`/deliveries/${deliveryId}`}>View {trackingNumber ?? 'delivery'}</Link>}
+            </div>}
+          </div>
+          <button className="button button--secondary" disabled={Boolean(busyAction) || account._id === user._id} onClick={() => update(`/users/${account._id}`, { isActive: !account.isActive }, `${account.isActive ? 'Deactivate' : 'Activate'} ${account.name}?`)}>{account.isActive ? 'Deactivate' : 'Activate'}</button>
+        </div>;
+      })}</div> : !directoryLoading && <div className="account-directory-empty"><Search /><h3>No matching accounts</h3><p>Change or clear the filters to see more people.</p></div>}
       <div className="directory-pagination"><span>{pagination.total} total {pagination.total === 1 ? 'account' : 'accounts'}</span><div><button type="button" className="button button--secondary" disabled={directoryLoading || pagination.page <= 1} onClick={() => setDirectoryPage((current) => current - 1)}><ArrowLeft /> Previous</button><button type="button" className="button button--secondary" disabled={directoryLoading || pagination.page >= pagination.totalPages} onClick={() => setDirectoryPage((current) => current + 1)}>Next <ArrowRight /></button></div></div>
     </section>}
   </>;

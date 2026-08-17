@@ -1,5 +1,6 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import ResourcesPage from './resources-page.jsx';
 
@@ -7,17 +8,19 @@ const { api } = vi.hoisted(() => ({ api: { get: vi.fn(), patch: vi.fn(), post: v
 vi.mock('../lib/api.js', () => ({ api }));
 vi.mock('../context/auth-context.jsx', () => ({ useAuth: () => ({ user: { _id: 'admin-current', role: 'admin' } }) }));
 
+const renderPage = () => render(<MemoryRouter><ResourcesPage /></MemoryRouter>);
+
 const accounts = Array.from({ length: 7 }, (_, index) => ({
-  _id: `user-${index + 1}`,
-  name: index === 6 ? 'Maya Driver' : `Account ${index + 1}`,
+  _id: index === 0 ? 'user-driver-busy' : index === 1 ? 'user-driver-available' : `user-${index + 1}`,
+  name: index === 0 ? 'Rohan Driver' : index === 1 ? 'Asha Driver' : index === 6 ? 'Maya Driver' : `Account ${index + 1}`,
   email: index === 6 ? 'maya@example.com' : `account-${index + 1}@example.com`,
-  role: index === 6 ? 'driver' : 'customer',
+  role: index <= 1 || index === 6 ? 'driver' : 'customer',
   isActive: index !== 4
 }));
 
 const drivers = [
   { _id: 'driver-available', user: { _id: 'user-driver-available', name: 'Asha Driver', role: 'driver' }, licenseNumber: 'DL-101', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'available', currentDelivery: null, isActive: true },
-  { _id: 'driver-busy', user: { _id: 'user-driver-busy', name: 'Rohan Driver', role: 'driver' }, licenseNumber: 'DL-102', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'busy', currentDelivery: 'delivery-1', isActive: true },
+  { _id: 'driver-busy', user: { _id: 'user-driver-busy', name: 'Rohan Driver', role: 'driver' }, licenseNumber: 'DL-102', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'busy', currentDelivery: { _id: 'delivery-1', trackingNumber: 'FF-1005', status: 'in_transit' }, isActive: true },
   { _id: 'driver-offline', user: { _id: 'user-driver-offline', name: 'Neha Driver', role: 'driver' }, licenseNumber: 'DL-103', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'offline', currentDelivery: null, isActive: true },
   { _id: 'driver-former', user: { _id: 'user-driver-former', name: 'Former Driver', role: 'customer' }, licenseNumber: 'DL-104', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'offline', currentDelivery: null, isActive: false },
 ];
@@ -48,7 +51,7 @@ afterEach(cleanup);
 
 describe('resource account directory', () => {
   it('shows clear driver status labels without changing the stored values', async () => {
-    render(<ResourcesPage />);
+    renderPage();
 
     expect(await screen.findByRole('combobox', { name: 'Availability for Asha Driver' })).toHaveDisplayValue('Available');
     expect(screen.getByRole('combobox', { name: 'Availability for Rohan Driver' })).toHaveDisplayValue('On delivery');
@@ -60,7 +63,7 @@ describe('resource account directory', () => {
   });
 
   it('keeps the staff form out of the way until the admin opens it', async () => {
-    render(<ResourcesPage />);
+    renderPage();
 
     expect(await screen.findByRole('heading', { name: 'Account directory' })).toBeInTheDocument();
     expect(screen.queryByLabelText('Full name')).not.toBeInTheDocument();
@@ -69,8 +72,19 @@ describe('resource account directory', () => {
     expect(screen.getByRole('button', { name: 'Close form' })).toHaveAttribute('aria-expanded', 'true');
   });
 
+  it('locks role changes for a driver with an active delivery and explains how to recover', async () => {
+    renderPage();
+
+    const lockedRole = await screen.findByRole('combobox', { name: 'Role for Rohan Driver' });
+    expect(lockedRole).toBeDisabled();
+    expect(screen.getByText('Role locked')).toBeInTheDocument();
+    expect(screen.getByText('Role cannot be changed because this driver has an active delivery.')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'View FF-1005' })).toHaveAttribute('href', '/deliveries/delivery-1');
+    expect(screen.getByRole('combobox', { name: 'Role for Asha Driver' })).toBeEnabled();
+  });
+
   it('searches and filters accounts through the paginated API', async () => {
-    render(<ResourcesPage />);
+    renderPage();
     const search = await screen.findByRole('searchbox', { name: 'Search accounts' });
 
     await userEvent.type(search, 'Maya');
@@ -84,7 +98,7 @@ describe('resource account directory', () => {
   });
 
   it('shows only one short page of accounts and moves to the next page', async () => {
-    render(<ResourcesPage />);
+    renderPage();
 
     expect(await screen.findByText('Showing 1–6 of 7')).toBeInTheDocument();
     expect(screen.queryByText('Maya Driver')).not.toBeInTheDocument();
