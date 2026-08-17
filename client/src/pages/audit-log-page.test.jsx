@@ -16,7 +16,7 @@ const audit = {
 
 beforeEach(() => {
   api.get.mockReset().mockImplementation((path) => {
-    if (path === '/users') return Promise.resolve({ data: { data: [{ _id: 'user-1', name: 'Operations Admin', role: 'admin' }] } });
+    if (path === '/users?page=1&limit=100') return Promise.resolve({ data: { data: { items: [{ _id: 'user-1', name: 'Operations Admin', role: 'admin' }] } } });
     return Promise.resolve({ data: { data: { items: [audit], actions: ['delivery.reassigned'] } } });
   });
 });

@@ -33,6 +33,25 @@ describe('resource management invariants', () => {
     expect(await User.findOne({ email: 'new-admin@example.com' })).toBeTruthy();
   });
 
+  it('searches, filters, and paginates the account directory', async () => {
+    await User.create(Array.from({ length: 12 }, (_, index) => ({
+      name: `Directory Member ${index + 1}`,
+      email: `directory-${index + 1}@example.com`,
+      role: index < 9 ? 'driver' : 'customer',
+      isActive: index !== 4,
+      passwordHash: 'unused'
+    })));
+
+    const response = await request(app)
+      .get('/api/v1/users?search=Directory&role=driver&status=active&page=2&limit=5')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(response.body.data.items).toHaveLength(3);
+    expect(response.body.data.items.every((item) => item.role === 'driver' && item.isActive)).toBe(true);
+    expect(response.body.data.pagination).toEqual({ page: 2, limit: 5, total: 8, totalPages: 2 });
+  });
+
   it('requires customers to create their own account through sign up', async () => {
     await request(app).post('/api/v1/users').set('Authorization', `Bearer ${token}`).send({
       name: 'Customer', email: 'admin-created-customer@example.com', password: 'Password1', role: 'customer'

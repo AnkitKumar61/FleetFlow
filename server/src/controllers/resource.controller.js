@@ -9,9 +9,24 @@ import { ok } from '../utils/api-response.js';
 import { recordAudit } from '../services/audit.service.js';
 
 export async function listUsers(req, res) {
-  const filter = req.query.role ? { role: req.query.role } : {};
-  const users = await User.find(filter).sort({ createdAt: -1 }).limit(100);
-  return ok(res, users);
+  const { search, role, status, page, limit } = req.query;
+  const filter = {};
+  if (role) filter.role = role;
+  if (status) filter.isActive = status === 'active';
+  if (search) {
+    const escapedSearch = search.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = new RegExp(escapedSearch, 'i');
+    filter.$or = [{ name: match }, { email: match }];
+  }
+
+  const [items, total] = await Promise.all([
+    User.find(filter).sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit),
+    User.countDocuments(filter)
+  ]);
+  return ok(res, {
+    items,
+    pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
+  });
 }
 export async function createUser(req, res) {
   const session = await mongoose.startSession();
