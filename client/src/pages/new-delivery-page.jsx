@@ -12,6 +12,8 @@ const localMinimum = () => {
   return date.toISOString().slice(0, 16);
 };
 
+export const localDateTimeToIso = (value) => new Date(value).toISOString();
+
 function AddressFields({ section, value, onChange }) {
   return addressFields.map(([field, label]) => <label key={field}>{label}<input
     required
@@ -36,7 +38,10 @@ export default function NewDeliveryPage() {
     setBusy(true);
     setError('');
     try {
-      const { data } = await api.post('/deliveries', form);
+      const { data } = await api.post('/deliveries', {
+        ...form,
+        expectedDeliveryAt: localDateTimeToIso(form.expectedDeliveryAt)
+      });
       navigate(`/deliveries/${data.data._id}`);
     } catch (requestError) {
       setError(requestError.response?.data?.error?.message ?? 'Could not create delivery.');
