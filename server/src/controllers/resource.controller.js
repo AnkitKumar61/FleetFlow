@@ -7,6 +7,7 @@ import { Notification } from '../models/notification.js';
 import { AppError } from '../utils/app-error.js';
 import { ok } from '../utils/api-response.js';
 import { recordAudit } from '../services/audit.service.js';
+import { consumePhoneVerification } from '../services/phone-verification.service.js';
 
 export async function listUsers(req, res) {
   const { search, role, status, page, limit } = req.query;
@@ -35,10 +36,20 @@ export async function createUser(req, res) {
     await session.withTransaction(async () => {
       const email = req.body.email.toLowerCase();
       if (await User.exists({ email }).session(session)) throw new AppError(409, 'EMAIL_IN_USE', 'An account already exists for this email');
+      if (req.body.role === 'driver') {
+        await consumePhoneVerification({
+          phone: req.body.phone,
+          verificationToken: req.body.phoneVerificationToken,
+          purpose: 'staff_creation',
+          requestedBy: req.user._id,
+          session
+        });
+      }
       const [user] = await User.create([{
         name: req.body.name,
         email,
         phone: req.body.phone || undefined,
+        phoneVerifiedAt: req.body.role === 'driver' ? new Date() : null,
         role: req.body.role,
         passwordHash: await User.hashPassword(req.body.password)
       }], { session });
@@ -75,6 +86,7 @@ export async function listDrivers(_req, res) {
 export async function createDriver(req, res) {
   const user = await User.findById(req.body.userId);
   if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+  if (!user.phone || !user.phoneVerifiedAt) throw new AppError(409, 'VERIFIED_PHONE_REQUIRED', 'Verify the user phone number before creating a driver profile');
   user.role = 'driver'; await user.save();
   const driver = await Driver.create({ user: user._id, licenseNumber: req.body.licenseNumber, licenseExpiresAt: req.body.licenseExpiresAt, status: req.body.status });
   return ok(res, await driver.populate('user', 'name email phone'), null, 201);

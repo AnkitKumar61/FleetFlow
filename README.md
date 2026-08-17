@@ -27,6 +27,7 @@ Development web: `http://localhost:5173` · Docker web: `http://localhost:8080` 
 ## Features
 
 - Registration, login, rotating HTTP-only refresh sessions and logout revocation
+- Required test-mode phone verification for new customers and drivers, with expiring single-use codes
 - Admin, driver and customer authorization with delivery-level isolation
 - Driver/vehicle management and transaction-safe capacity-aware assignment
 - Server-enforced delivery state machine and auditable status timeline
@@ -67,7 +68,7 @@ Copy `server/.env.example` to `server/.env`, replace secrets, then run `docker c
 
 ## Environment
 
-Server variables are documented in `server/.env.example`; client variables are in `client/.env.example`. Never commit the real files. Add `IMAGEKIT_PRIVATE_KEY` and `IMAGEKIT_URL_ENDPOINT` from a free ImageKit account to enable optional proof images. The private key stays on the API server; proof files are private and the app generates five-minute signed viewing links.
+Server variables are documented in `server/.env.example`; client variables are in `client/.env.example`. Never commit the real files. `PHONE_VERIFICATION_MODE=test` keeps the portfolio flow free: the server generates a short-lived code and the interface labels it as test-only instead of claiming that an SMS was sent. Add `IMAGEKIT_PRIVATE_KEY` and `IMAGEKIT_URL_ENDPOINT` from a free ImageKit account to enable optional proof images. The private key stays on the API server; proof files are private and the app generates five-minute signed viewing links.
 
 ## Documentation
 

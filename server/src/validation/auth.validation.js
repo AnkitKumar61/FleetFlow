@@ -1,9 +1,11 @@
 import { z } from 'zod';
+import { phoneSchema, verificationTokenSchema } from './phone.validation.js';
 
 export const registerBody = z.object({
   name: z.string().trim().min(2).max(80),
   email: z.string().trim().email().max(160),
-  phone: z.string().trim().max(24).optional(),
+  phone: phoneSchema,
+  phoneVerificationToken: verificationTokenSchema,
   password: z.string().min(8).max(128).regex(/[A-Z]/, 'Include an uppercase letter').regex(/[0-9]/, 'Include a number')
 });
 

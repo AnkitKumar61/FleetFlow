@@ -47,3 +47,5 @@ services:
         value: "true"
       - key: EMBEDDED_WORKER
         value: "true"
+      - key: PHONE_VERIFICATION_MODE
+        value: test

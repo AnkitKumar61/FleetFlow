@@ -1,9 +1,11 @@
 import crypto from 'node:crypto';
+import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import { env } from '../config/env.js';
 import { User } from '../models/user.js';
 import { Session } from '../models/session.js';
 import { AppError } from '../utils/app-error.js';
+import { consumePhoneVerification } from './phone-verification.service.js';
 
 const hash = (value) => crypto.createHash('sha256').update(value).digest('hex');
 
@@ -27,8 +29,24 @@ async function createSession(user, context) {
 
 export async function register(input, context) {
   const email = input.email.toLowerCase();
-  if (await User.exists({ email })) throw new AppError(409, 'EMAIL_IN_USE', 'An account already exists for this email');
-  const user = await User.create({ ...input, email, role: 'customer', passwordHash: await User.hashPassword(input.password) });
+  const session = await mongoose.startSession();
+  let user;
+  try {
+    await session.withTransaction(async () => {
+      if (await User.exists({ email }).session(session)) throw new AppError(409, 'EMAIL_IN_USE', 'An account already exists for this email');
+      await consumePhoneVerification({ phone: input.phone, verificationToken: input.phoneVerificationToken, purpose: 'customer_registration', session });
+      [user] = await User.create([{
+        name: input.name,
+        email,
+        phone: input.phone,
+        phoneVerifiedAt: new Date(),
+        role: 'customer',
+        passwordHash: await User.hashPassword(input.password)
+      }], { session });
+    });
+  } finally {
+    await session.endSession();
+  }
   const refresh = await createSession(user, context);
   return { user, accessToken: accessToken(user), refreshToken: refresh };
 }

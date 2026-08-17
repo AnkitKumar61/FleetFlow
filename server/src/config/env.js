@@ -15,7 +15,8 @@ const schema = z.object({
   IMAGEKIT_PRIVATE_KEY: z.string().min(1).optional(),
   IMAGEKIT_URL_ENDPOINT: z.string().url().optional(),
   TRUST_PROXY: z.enum(['true', 'false']).default('false'),
-  EMBEDDED_WORKER: z.enum(['true', 'false']).default('false')
+  EMBEDDED_WORKER: z.enum(['true', 'false']).default('false'),
+  PHONE_VERIFICATION_MODE: z.enum(['test']).default('test')
 }).superRefine((value, context) => {
   if (Boolean(value.IMAGEKIT_PRIVATE_KEY) !== Boolean(value.IMAGEKIT_URL_ENDPOINT)) {
     context.addIssue({ code: z.ZodIssueCode.custom, message: 'IMAGEKIT_PRIVATE_KEY and IMAGEKIT_URL_ENDPOINT must be configured together' });

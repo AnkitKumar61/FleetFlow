@@ -1,9 +1,13 @@
 import { Router } from 'express';
+import rateLimit from 'express-rate-limit';
 import { z } from 'zod';
 import * as controller from '../controllers/resource.controller.js';
+import * as phoneController from '../controllers/phone-verification.controller.js';
+import { env } from '../config/env.js';
 import { authenticate, authorize } from '../middleware/auth.js';
 import { validate } from '../middleware/validate.js';
 import { asyncHandler } from '../utils/async-handler.js';
+import { phoneSchema, startPhoneVerificationBody, verificationTokenSchema, verifyPhoneCodeBody } from '../validation/phone.validation.js';
 
 const id = z.object({ id: z.string().regex(/^[a-f\d]{24}$/i) });
 const auditQuery = z.object({
@@ -28,7 +32,8 @@ const userQuery = z.object({
 const createUserBody = z.object({
   name: z.string().trim().min(2).max(80),
   email: z.string().trim().email().max(160),
-  phone: z.string().trim().max(24).optional(),
+  phone: phoneSchema.optional(),
+  phoneVerificationToken: verificationTokenSchema.optional(),
   password: z.string().min(8).max(128).regex(/[A-Z]/, 'Include an uppercase letter').regex(/[0-9]/, 'Include a number'),
   role: z.enum(['admin', 'driver']),
   licenseNumber: z.string().trim().min(3).max(30).optional(),
@@ -36,11 +41,16 @@ const createUserBody = z.object({
   driverStatus: z.enum(['available', 'offline']).optional()
 }).superRefine((value, context) => {
   if (value.role !== 'driver') return;
+  if (!value.phone) context.addIssue({ code: z.ZodIssueCode.custom, path: ['phone'], message: 'Phone number is required for a driver' });
+  if (!value.phoneVerificationToken) context.addIssue({ code: z.ZodIssueCode.custom, path: ['phoneVerificationToken'], message: 'Verify the driver phone number' });
   if (!value.licenseNumber) context.addIssue({ code: z.ZodIssueCode.custom, path: ['licenseNumber'], message: 'Licence number is required for a driver' });
   if (!value.licenseExpiresAt) context.addIssue({ code: z.ZodIssueCode.custom, path: ['licenseExpiresAt'], message: 'Licence expiry date is required for a driver' });
 });
 export const resourceRouter = Router();
 resourceRouter.use(authenticate);
+const verificationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, skip: () => env.NODE_ENV === 'test', standardHeaders: true, legacyHeaders: false, message: { success: false, error: { code: 'RATE_LIMITED', message: 'Too many verification attempts. Try again later.' } } });
+resourceRouter.post('/phone-verifications', authorize('admin'), verificationLimiter, validate({ body: startPhoneVerificationBody }), asyncHandler(phoneController.startStaff));
+resourceRouter.post('/phone-verifications/verify', authorize('admin'), verificationLimiter, validate({ body: verifyPhoneCodeBody }), asyncHandler(phoneController.verifyStaff));
 resourceRouter.get('/users', authorize('admin'), validate({ query: userQuery }), asyncHandler(controller.listUsers));
 resourceRouter.post('/users', authorize('admin'), validate({ body: createUserBody }), asyncHandler(controller.createUser));
 resourceRouter.patch('/users/:id', authorize('admin'), validate({ params: id, body: z.object({ role: z.enum(['admin', 'driver', 'customer']).optional(), isActive: z.boolean().optional() }).refine((v) => Object.keys(v).length) }), asyncHandler(controller.updateUser));

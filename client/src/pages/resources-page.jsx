@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, RotateCcw, Search, UserPlus, X } from 'lucide-re
 import { api } from '../lib/api.js';
 import { useAuth } from '../context/auth-context.jsx';
 import { ErrorState, Loading, PageHeader, StatusBadge } from '../components/ui.jsx';
+import { PhoneVerificationFields } from '../components/phone-verification-fields.jsx';
 
 const USER_PAGE_SIZE = 6;
 const DRIVER_STATUS_OPTIONS = [
@@ -15,6 +16,7 @@ const emptyAccountForm = {
   name: '',
   email: '',
   phone: '',
+  phoneVerificationToken: '',
   password: '',
   role: 'driver',
   licenseNumber: '',
@@ -122,6 +124,7 @@ export default function ResourcesPage() {
       delete payload.licenseNumber;
       delete payload.licenseExpiresAt;
       delete payload.driverStatus;
+      delete payload.phoneVerificationToken;
     }
     try {
       await api.post('/users', payload);
@@ -183,15 +186,16 @@ export default function ResourcesPage() {
         <div className="account-form-heading"><div><h3>Create staff account</h3><p>Add a driver or administrator. Customers continue to use the Sign Up page.</p></div><span>Admin only</span></div>
         <label>Full name<input required minLength="2" value={accountForm.name} onChange={(event) => setAccountForm({ ...accountForm, name: event.target.value })} autoComplete="off"/></label>
         <label>Email address<input required type="email" value={accountForm.email} onChange={(event) => setAccountForm({ ...accountForm, email: event.target.value })} autoComplete="off"/></label>
-        <label>Phone <span>optional</span><input value={accountForm.phone} onChange={(event) => setAccountForm({ ...accountForm, phone: event.target.value })} autoComplete="off"/></label>
-        <label>Role<select value={accountForm.role} onChange={(event) => setAccountForm({ ...accountForm, role: event.target.value })}><option value="driver">Driver</option><option value="admin">Admin</option></select></label>
+        {accountForm.role === 'admin' && <label>Phone <span>optional</span><input type="tel" value={accountForm.phone} onChange={(event) => setAccountForm({ ...accountForm, phone: event.target.value })} autoComplete="tel"/></label>}
+        <label>Role<select value={accountForm.role} onChange={(event) => setAccountForm({ ...accountForm, role: event.target.value, phoneVerificationToken: '' })}><option value="driver">Driver</option><option value="admin">Admin</option></select></label>
         <label className="account-password">Temporary password<input required type="password" minLength="8" pattern="(?=.*[A-Z])(?=.*\d).{8,}" title="Use at least 8 characters, one capital letter and one number." value={accountForm.password} onChange={(event) => setAccountForm({ ...accountForm, password: event.target.value })} autoComplete="new-password"/><small>8+ characters, one capital letter and one number.</small></label>
         {accountForm.role === 'driver' && <>
+          <PhoneVerificationFields scope="staff" phone={accountForm.phone} onPhoneChange={(phone) => setAccountForm((current) => ({ ...current, phone }))} onVerified={(phoneVerificationToken) => setAccountForm((current) => ({ ...current, phoneVerificationToken }))}/>
           <label>Licence number<input required value={accountForm.licenseNumber} onChange={(event) => setAccountForm({ ...accountForm, licenseNumber: event.target.value })}/></label>
           <label>Licence expiry<input required type="date" min={new Date().toISOString().slice(0, 10)} value={accountForm.licenseExpiresAt} onChange={(event) => setAccountForm({ ...accountForm, licenseExpiresAt: event.target.value })}/></label>
           <label>Starting status<select value={accountForm.driverStatus} onChange={(event) => setAccountForm({ ...accountForm, driverStatus: event.target.value })}>{DRIVER_STATUS_OPTIONS.filter((status) => status.value !== 'busy').map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</select></label>
         </>}
-        <button className="button account-create-button" disabled={Boolean(busyAction)}>{busyAction === 'create-account' ? 'Creating account…' : 'Create staff account'}</button>
+        <button className="button account-create-button" disabled={Boolean(busyAction) || (accountForm.role === 'driver' && !accountForm.phoneVerificationToken)}>{busyAction === 'create-account' ? 'Creating account…' : 'Create staff account'}</button>
       </form>}
       <div className="account-directory-tools">
         <label className="account-search"><span>Search accounts</span><span><Search /><input type="search" value={directorySearch} onChange={(event) => setDirectorySearch(event.target.value)} placeholder="Name or email"/></span></label>

@@ -18,6 +18,16 @@ describe('resource management invariants', () => {
     token = login.body.data.accessToken;
   });
 
+  async function verifyStaffPhone(phone) {
+    const started = await request(app).post('/api/v1/phone-verifications').set('Authorization', `Bearer ${token}`).send({ phone }).expect(201);
+    const verified = await request(app).post('/api/v1/phone-verifications/verify').set('Authorization', `Bearer ${token}`).send({
+      phone,
+      verificationId: started.body.data.verificationId,
+      code: started.body.data.testCode
+    }).expect(200);
+    return verified.body.data.verificationToken;
+  }
+
   it('prevents an admin from changing their own role', async () => {
     const response = await request(app).patch(`/api/v1/users/${admin._id}`).set('Authorization', `Bearer ${token}`).send({ role: 'customer' }).expect(409);
     expect(response.body.error.code).toBe('SELF_ROLE_CHANGE');
@@ -60,14 +70,18 @@ describe('resource management invariants', () => {
   });
 
   it('creates a driver account and driver profile together', async () => {
+    const phone = '+919876543220';
     const response = await request(app).post('/api/v1/users').set('Authorization', `Bearer ${token}`).send({
       name: 'New Driver', email: 'new-driver@example.com', password: 'Password1', role: 'driver',
+      phone, phoneVerificationToken: await verifyStaffPhone(phone),
       licenseNumber: 'DL-NEW-100', licenseExpiresAt: new Date(Date.now() + 86400000).toISOString(), driverStatus: 'available'
     }).expect(201);
     expect(response.body.data.user.role).toBe('driver');
     const profile = await Driver.findOne({ user: response.body.data.user._id });
     expect(profile.licenseNumber).toBe('DL-NEW-100');
     expect(profile.status).toBe('available');
+    expect(response.body.data.user.phone).toBe(phone);
+    expect(response.body.data.user.phoneVerifiedAt).toBeTruthy();
   });
 
   it('does not allow a driver to create staff accounts', async () => {
