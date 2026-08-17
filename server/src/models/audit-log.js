@@ -10,6 +10,9 @@ const auditLogSchema = new mongoose.Schema({
 }, { timestamps: true });
 
 auditLogSchema.index({ entityType: 1, entityId: 1, createdAt: -1 });
+auditLogSchema.index({ createdAt: -1, _id: -1 });
+auditLogSchema.index({ actor: 1, createdAt: -1 });
+auditLogSchema.index({ action: 1, createdAt: -1 });
 
 export const AuditLog = mongoose.model('AuditLog', auditLogSchema);
 

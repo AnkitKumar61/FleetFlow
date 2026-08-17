@@ -142,7 +142,35 @@ describe('resource management invariants', () => {
     expect(response.body.data.items[0].actor.name).toBe('Admin');
     expect(response.body.data.items[0].requestId).toBe('request-1');
     expect(response.body.data.actions).toEqual(['delivery.assignment_rejected', 'delivery.reassigned']);
+    expect(response.body.data.pagination).toEqual({ page: 1, limit: 10, total: 1, totalPages: 1 });
 
     await request(app).get('/api/v1/audit-logs').set('Authorization', `Bearer ${driverLogin.body.data.accessToken}`).expect(403);
+  });
+
+  it('paginates audit history and filters an inclusive date range', async () => {
+    const insideRange = Array.from({ length: 25 }, (_, index) => ({
+      actor: admin._id,
+      action: 'delivery.status_changed',
+      entityType: 'Delivery',
+      entityId: admin._id,
+      requestId: `dated-request-${index + 1}`,
+      createdAt: new Date(`2026-08-10T10:${String(index).padStart(2, '0')}:00.000Z`)
+    }));
+    await AuditLog.create([
+      ...insideRange,
+      { actor: admin._id, action: 'delivery.created', entityType: 'Delivery', entityId: admin._id, requestId: 'outside-range', createdAt: new Date('2026-07-31T23:59:59.999Z') }
+    ]);
+
+    const response = await request(app)
+      .get('/api/v1/audit-logs?page=2&limit=10&from=2026-08-10T00%3A00%3A00.000Z&to=2026-08-10T23%3A59%3A59.999Z')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+
+    expect(response.body.data.items).toHaveLength(10);
+    expect(response.body.data.pagination).toEqual({ page: 2, limit: 10, total: 25, totalPages: 3 });
+    expect(response.body.data.items.every((item) => item.requestId.startsWith('dated-request-'))).toBe(true);
+
+    await request(app).get('/api/v1/audit-logs?limit=15').set('Authorization', `Bearer ${token}`).expect(422);
+    await request(app).get('/api/v1/audit-logs?from=2026-08-12T00%3A00%3A00.000Z&to=2026-08-11T23%3A59%3A59.999Z').set('Authorization', `Bearer ${token}`).expect(422);
   });
 });

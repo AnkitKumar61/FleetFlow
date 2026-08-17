@@ -8,7 +8,15 @@ import { asyncHandler } from '../utils/async-handler.js';
 const id = z.object({ id: z.string().regex(/^[a-f\d]{24}$/i) });
 const auditQuery = z.object({
   actor: z.string().regex(/^[a-f\d]{24}$/i).optional(),
-  action: z.string().trim().min(1).max(80).regex(/^[a-z][a-z0-9_.-]*$/).optional()
+  action: z.string().trim().min(1).max(80).regex(/^[a-z][a-z0-9_.-]*$/).optional(),
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().refine((value) => [10, 20].includes(value), 'Limit must be 10 or 20').default(10)
+}).superRefine((value, context) => {
+  if (value.from && value.to && new Date(value.from) > new Date(value.to)) {
+    context.addIssue({ code: z.ZodIssueCode.custom, path: ['to'], message: 'To date must be on or after From date' });
+  }
 });
 const userQuery = z.object({
   search: z.string().trim().min(1).max(100).optional(),

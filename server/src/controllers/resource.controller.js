@@ -102,14 +102,25 @@ export async function updateVehicle(req, res) {
   return ok(res, vehicle);
 }
 export async function listAudits(req, res) {
+  const { actor, action, from, to, page, limit } = req.query;
   const filter = {};
-  if (req.query.actor) filter.actor = req.query.actor;
-  if (req.query.action) filter.action = req.query.action;
-  const [items, actions] = await Promise.all([
-    AuditLog.find(filter).populate('actor', 'name role').sort({ createdAt: -1 }).limit(100),
+  if (actor) filter.actor = actor;
+  if (action) filter.action = action;
+  if (from || to) {
+    filter.createdAt = {};
+    if (from) filter.createdAt.$gte = new Date(from);
+    if (to) filter.createdAt.$lte = new Date(to);
+  }
+  const [items, total, actions] = await Promise.all([
+    AuditLog.find(filter).populate('actor', 'name role').sort({ createdAt: -1, _id: -1 }).skip((page - 1) * limit).limit(limit),
+    AuditLog.countDocuments(filter),
     AuditLog.distinct('action')
   ]);
-  return ok(res, { items, actions: actions.sort() });
+  return ok(res, {
+    items,
+    actions: actions.sort(),
+    pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
+  });
 }
 function notificationScope(user) {
   return user.role === 'admin'

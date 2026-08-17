@@ -17,7 +17,10 @@ const audit = {
 beforeEach(() => {
   api.get.mockReset().mockImplementation((path) => {
     if (path === '/users?page=1&limit=100') return Promise.resolve({ data: { data: { items: [{ _id: 'user-1', name: 'Operations Admin', role: 'admin' }] } } });
-    return Promise.resolve({ data: { data: { items: [audit], actions: ['delivery.reassigned'] } } });
+    const query = new URLSearchParams(path.split('?')[1]);
+    const page = Number(query.get('page'));
+    const limit = Number(query.get('limit'));
+    return Promise.resolve({ data: { data: { items: [audit], actions: ['delivery.reassigned'], pagination: { page, limit, total: 25, totalPages: Math.ceil(25 / limit) } } } });
   });
 });
 afterEach(cleanup);
@@ -41,6 +44,27 @@ describe('audit history page', () => {
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Performed by' }), 'user-1');
     await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Action' }), 'delivery.reassigned');
 
-    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/audit-logs?actor=user-1&action=delivery.reassigned'));
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/audit-logs?page=1&limit=10&actor=user-1&action=delivery.reassigned'));
+  });
+
+  it('changes page size, navigates pages, and sends inclusive date boundaries', async () => {
+    render(<MemoryRouter><AuditLogPage /></MemoryRouter>);
+    await screen.findByText('Showing 1–10 of 25 records');
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Records per page' }), '20');
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/audit-logs?page=1&limit=20'));
+    await userEvent.click(screen.getByRole('button', { name: /Next/i }));
+    await waitFor(() => expect(api.get).toHaveBeenCalledWith('/audit-logs?page=2&limit=20'));
+
+    await userEvent.type(screen.getByLabelText('From date'), '2026-08-01');
+    await userEvent.type(screen.getByLabelText('To date'), '2026-08-17');
+    await waitFor(() => {
+      const requestPath = api.get.mock.calls.map(([path]) => path).find((path) => path.includes('&from=') && path.includes('&to='));
+      const query = new URL(requestPath, 'https://fleetflow.test').searchParams;
+      expect(query.get('page')).toBe('1');
+      expect(query.get('limit')).toBe('20');
+      expect(query.get('from')).toBe(new Date('2026-08-01T00:00:00.000').toISOString());
+      expect(query.get('to')).toBe(new Date('2026-08-17T23:59:59.999').toISOString());
+    });
   });
 });
