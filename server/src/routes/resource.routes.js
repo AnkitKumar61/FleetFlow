@@ -10,6 +10,13 @@ const auditQuery = z.object({
   actor: z.string().regex(/^[a-f\d]{24}$/i).optional(),
   action: z.string().trim().min(1).max(80).regex(/^[a-z][a-z0-9_.-]*$/).optional()
 });
+const userQuery = z.object({
+  search: z.string().trim().min(1).max(100).optional(),
+  role: z.enum(['admin', 'driver', 'customer']).optional(),
+  status: z.enum(['active', 'inactive']).optional(),
+  page: z.coerce.number().int().min(1).default(1),
+  limit: z.coerce.number().int().min(1).max(100).default(20)
+});
 const createUserBody = z.object({
   name: z.string().trim().min(2).max(80),
   email: z.string().trim().email().max(160),
@@ -26,7 +33,7 @@ const createUserBody = z.object({
 });
 export const resourceRouter = Router();
 resourceRouter.use(authenticate);
-resourceRouter.get('/users', authorize('admin'), asyncHandler(controller.listUsers));
+resourceRouter.get('/users', authorize('admin'), validate({ query: userQuery }), asyncHandler(controller.listUsers));
 resourceRouter.post('/users', authorize('admin'), validate({ body: createUserBody }), asyncHandler(controller.createUser));
 resourceRouter.patch('/users/:id', authorize('admin'), validate({ params: id, body: z.object({ role: z.enum(['admin', 'driver', 'customer']).optional(), isActive: z.boolean().optional() }).refine((v) => Object.keys(v).length) }), asyncHandler(controller.updateUser));
 resourceRouter.get('/drivers', authorize('admin'), asyncHandler(controller.listDrivers));

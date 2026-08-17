@@ -1,7 +1,10 @@
 import { useEffect, useState } from 'react';
+import { ArrowLeft, ArrowRight, RotateCcw, Search, UserPlus, X } from 'lucide-react';
 import { api } from '../lib/api.js';
 import { useAuth } from '../context/auth-context.jsx';
 import { ErrorState, Loading, PageHeader, StatusBadge } from '../components/ui.jsx';
+
+const USER_PAGE_SIZE = 6;
 
 const emptyAccountForm = {
   name: '',
@@ -19,7 +22,13 @@ export default function ResourcesPage() {
   const isAdmin = user.role === 'admin';
   const [drivers, setDrivers] = useState(null);
   const [vehicles, setVehicles] = useState(null);
-  const [users, setUsers] = useState([]);
+  const [directory, setDirectory] = useState({ items: [], pagination: { page: 1, limit: USER_PAGE_SIZE, total: 0, totalPages: 1 } });
+  const [directoryFilters, setDirectoryFilters] = useState({ search: '', role: '', status: '' });
+  const [directorySearch, setDirectorySearch] = useState('');
+  const [directoryPage, setDirectoryPage] = useState(1);
+  const [directoryLoading, setDirectoryLoading] = useState(false);
+  const [directoryError, setDirectoryError] = useState('');
+  const [showAccountForm, setShowAccountForm] = useState(false);
   const [loadError, setLoadError] = useState('');
   const [actionError, setActionError] = useState('');
   const [actionSuccess, setActionSuccess] = useState('');
@@ -27,28 +36,60 @@ export default function ResourcesPage() {
   const [vehicleForm, setVehicleForm] = useState({ registrationNumber: '', type: 'van', capacityKg: '' });
   const [accountForm, setAccountForm] = useState(emptyAccountForm);
 
-  const load = async () => {
+  const loadResources = async () => {
     setLoadError('');
     try {
-      const requests = [api.get('/drivers'), api.get('/vehicles')];
-      if (isAdmin) requests.push(api.get('/users'));
-      const [driverData, vehicleData, userData] = await Promise.all(requests);
+      const [driverData, vehicleData] = await Promise.all([api.get('/drivers'), api.get('/vehicles')]);
       setDrivers(driverData.data.data);
       setVehicles(vehicleData.data.data);
-      setUsers(userData?.data.data ?? []);
     } catch (requestError) {
       setLoadError(requestError.response?.data?.error?.message ?? 'Could not load resources.');
     }
   };
 
-  useEffect(() => { load(); }, []);
+  const loadUsers = async (overrides = {}) => {
+    if (!isAdmin) return;
+    const queryState = { ...directoryFilters, page: directoryPage, ...overrides };
+    const query = new URLSearchParams({ page: String(queryState.page), limit: String(USER_PAGE_SIZE) });
+    if (queryState.search) query.set('search', queryState.search);
+    if (queryState.role) query.set('role', queryState.role);
+    if (queryState.status) query.set('status', queryState.status);
+    setDirectoryLoading(true);
+    setDirectoryError('');
+    try {
+      const response = await api.get(`/users?${query}`);
+      setDirectory(response.data.data);
+      if (queryState.page > response.data.data.pagination.totalPages) {
+        setDirectoryPage(response.data.data.pagination.totalPages);
+      }
+    } catch (requestError) {
+      setDirectoryError(requestError.response?.data?.error?.message ?? 'Could not load the account directory.');
+    } finally {
+      setDirectoryLoading(false);
+    }
+  };
+
+  useEffect(() => { loadResources(); }, []);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const search = directorySearch.trim();
+      setDirectoryFilters((current) => current.search === search ? current : { ...current, search });
+      setDirectoryPage(1);
+    }, 250);
+    return () => clearTimeout(timer);
+  }, [directorySearch]);
+  useEffect(() => { loadUsers(); }, [directoryFilters, directoryPage]);
 
   const update = async (path, body, confirmation) => {
     if (confirmation && !confirm(confirmation)) return;
     setBusyAction(path);
     setActionError('');
     setActionSuccess('');
-    try { await api.patch(path, body); await load(); }
+    try {
+      await api.patch(path, body);
+      if (path.startsWith('/users/')) await loadUsers();
+      else await loadResources();
+    }
     catch (requestError) { setActionError(requestError.response?.data?.error?.message ?? 'The resource could not be updated.'); }
     finally { setBusyAction(''); }
   };
@@ -61,7 +102,7 @@ export default function ResourcesPage() {
     try {
       await api.post('/vehicles', vehicleForm);
       setVehicleForm({ registrationNumber: '', type: 'van', capacityKg: '' });
-      await load();
+      await loadResources();
     } catch (requestError) { setActionError(requestError.response?.data?.error?.message ?? 'The vehicle could not be added.'); }
     finally { setBusyAction(''); }
   };
@@ -81,7 +122,9 @@ export default function ResourcesPage() {
       await api.post('/users', payload);
       setAccountForm(emptyAccountForm);
       setActionSuccess(`${payload.role[0].toUpperCase()}${payload.role.slice(1)} account created. The user can now sign in.`);
-      await load();
+      setShowAccountForm(false);
+      setDirectoryPage(1);
+      await Promise.all([loadResources(), loadUsers({ page: 1 })]);
     } catch (requestError) {
       setActionError(requestError.response?.data?.error?.message ?? 'The account could not be created.');
     } finally {
@@ -89,8 +132,18 @@ export default function ResourcesPage() {
     }
   };
 
-  if (loadError) return <ErrorState message={loadError} retry={load}/>;
-  if (!drivers) return <Loading/>;
+  const clearDirectoryFilters = () => {
+    setDirectorySearch('');
+    setDirectoryFilters({ search: '', role: '', status: '' });
+    setDirectoryPage(1);
+  };
+  const filtersActive = Boolean(directorySearch || directoryFilters.role || directoryFilters.status);
+  const { items: users, pagination } = directory;
+  const firstVisibleUser = pagination.total ? ((pagination.page - 1) * pagination.limit) + 1 : 0;
+  const lastVisibleUser = Math.min(pagination.page * pagination.limit, pagination.total);
+
+  if (loadError) return <ErrorState message={loadError} retry={loadResources}/>;
+  if (!drivers || !vehicles) return <Loading/>;
 
   return <>
     <PageHeader title="Resource board" description="Availability, allocation and account authority in one operating view."/>
@@ -120,9 +173,9 @@ export default function ResourcesPage() {
     </div>
 
     {isAdmin && <section className="panel user-admin">
-      <div className="panel-heading"><div><h2>Accounts & roles</h2><p>Create users and control who can access FleetFlow</p></div></div>
-      <form className="account-create-form" onSubmit={createAccount}>
-        <div className="account-form-heading"><div><h3>Create staff account</h3><p>Customers create their own account from the Sign up page.</p></div><span>Admin only</span></div>
+      <div className="panel-heading account-directory-heading"><div><h2>Account directory</h2><p>{pagination.total} {pagination.total === 1 ? 'account' : 'accounts'} · Search, filter and manage access</p></div><button type="button" className={showAccountForm ? 'button button--secondary' : 'button'} onClick={() => setShowAccountForm((current) => !current)} aria-expanded={showAccountForm} aria-controls="staff-account-form">{showAccountForm ? <><X /> Close form</> : <><UserPlus /> Add staff account</>}</button></div>
+      {showAccountForm && <form id="staff-account-form" className="account-create-form" onSubmit={createAccount}>
+        <div className="account-form-heading"><div><h3>Create staff account</h3><p>Add a driver or administrator. Customers continue to use the Sign Up page.</p></div><span>Admin only</span></div>
         <label>Full name<input required minLength="2" value={accountForm.name} onChange={(event) => setAccountForm({ ...accountForm, name: event.target.value })} autoComplete="off"/></label>
         <label>Email address<input required type="email" value={accountForm.email} onChange={(event) => setAccountForm({ ...accountForm, email: event.target.value })} autoComplete="off"/></label>
         <label>Phone <span>optional</span><input value={accountForm.phone} onChange={(event) => setAccountForm({ ...accountForm, phone: event.target.value })} autoComplete="off"/></label>
@@ -134,8 +187,16 @@ export default function ResourcesPage() {
           <label>Starting status<select value={accountForm.driverStatus} onChange={(event) => setAccountForm({ ...accountForm, driverStatus: event.target.value })}><option value="offline">Offline</option><option value="available">Available</option></select></label>
         </>}
         <button className="button account-create-button" disabled={Boolean(busyAction)}>{busyAction === 'create-account' ? 'Creating account…' : 'Create staff account'}</button>
-      </form>
-      <div className="resource-list">{users.map((account) => <div className="resource-row user-row" key={account._id}><span className="avatar">{account.name.split(' ').map((word) => word[0]).slice(0, 2).join('')}</span><div><strong>{account.name}</strong><small>{account.email}</small></div><select disabled={Boolean(busyAction) || account._id === user._id} aria-label={`Role for ${account.name}`} value={account.role} onChange={(event) => update(`/users/${account._id}`, { role: event.target.value }, `Change ${account.name}'s role?`)}><option value="admin">Admin</option><option value="driver" disabled={!drivers.some((driver) => driver.user._id === account._id)}>Driver</option><option value="customer">Customer</option></select><button className="button button--secondary" disabled={Boolean(busyAction) || account._id === user._id} onClick={() => update(`/users/${account._id}`, { isActive: !account.isActive }, `${account.isActive ? 'Deactivate' : 'Activate'} ${account.name}?`)}>{account.isActive ? 'Deactivate' : 'Activate'}</button></div>)}</div>
+      </form>}
+      <div className="account-directory-tools">
+        <label className="account-search"><span>Search accounts</span><span><Search /><input type="search" value={directorySearch} onChange={(event) => setDirectorySearch(event.target.value)} placeholder="Name or email"/></span></label>
+        <label><span>Role</span><select value={directoryFilters.role} onChange={(event) => { setDirectoryFilters({ ...directoryFilters, role: event.target.value }); setDirectoryPage(1); }}><option value="">All roles</option><option value="admin">Admin</option><option value="driver">Driver</option><option value="customer">Customer</option></select></label>
+        <label><span>Access</span><select value={directoryFilters.status} onChange={(event) => { setDirectoryFilters({ ...directoryFilters, status: event.target.value }); setDirectoryPage(1); }}><option value="">Active and inactive</option><option value="active">Active only</option><option value="inactive">Inactive only</option></select></label>
+        <button type="button" className="text-button directory-reset" onClick={clearDirectoryFilters} disabled={!filtersActive}><RotateCcw /> Clear filters</button>
+      </div>
+      <div className="account-directory-summary" role="status"><span>{directoryLoading ? 'Updating accounts…' : pagination.total ? `Showing ${firstVisibleUser}–${lastVisibleUser} of ${pagination.total}` : 'No accounts match these filters'}</span><span>Page {pagination.page} of {pagination.totalPages}</span></div>
+      {directoryError ? <div className="directory-error"><p>{directoryError}</p><button type="button" className="text-button" onClick={() => loadUsers()}>Try again</button></div> : users.length ? <div className="resource-list" aria-busy={directoryLoading}>{users.map((account) => <div className="resource-row user-row" key={account._id}><span className="avatar">{account.name.split(' ').map((word) => word[0]).slice(0, 2).join('')}</span><div className="account-identity"><strong>{account.name}</strong><small>{account.email}</small></div><span className={`account-state account-state--${account.isActive ? 'active' : 'inactive'}`}>{account.isActive ? 'Active' : 'Inactive'}</span><select disabled={Boolean(busyAction) || account._id === user._id} aria-label={`Role for ${account.name}`} value={account.role} onChange={(event) => update(`/users/${account._id}`, { role: event.target.value }, `Change ${account.name}'s role?`)}><option value="admin">Admin</option><option value="driver" disabled={!drivers.some((driver) => driver.user._id === account._id)}>Driver</option><option value="customer">Customer</option></select><button className="button button--secondary" disabled={Boolean(busyAction) || account._id === user._id} onClick={() => update(`/users/${account._id}`, { isActive: !account.isActive }, `${account.isActive ? 'Deactivate' : 'Activate'} ${account.name}?`)}>{account.isActive ? 'Deactivate' : 'Activate'}</button></div>)}</div> : !directoryLoading && <div className="account-directory-empty"><Search /><h3>No matching accounts</h3><p>Change or clear the filters to see more people.</p></div>}
+      <div className="directory-pagination"><span>{pagination.total} total {pagination.total === 1 ? 'account' : 'accounts'}</span><div><button type="button" className="button button--secondary" disabled={directoryLoading || pagination.page <= 1} onClick={() => setDirectoryPage((current) => current - 1)}><ArrowLeft /> Previous</button><button type="button" className="button button--secondary" disabled={directoryLoading || pagination.page >= pagination.totalPages} onClick={() => setDirectoryPage((current) => current + 1)}>Next <ArrowRight /></button></div></div>
     </section>}
   </>;
 }

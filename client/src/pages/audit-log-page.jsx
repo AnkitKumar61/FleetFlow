@@ -43,7 +43,7 @@ export default function AuditLogPage() {
     }
   };
 
-  useEffect(() => { api.get('/users').then((response) => setUsers(response.data.data)).catch(() => {}); }, []);
+  useEffect(() => { api.get('/users?page=1&limit=100').then((response) => setUsers(response.data.data.items)).catch(() => {}); }, []);
   useEffect(() => { loadAudits(); }, [filters]);
 
   return <>
