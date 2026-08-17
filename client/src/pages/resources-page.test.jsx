@@ -15,9 +15,15 @@ const accounts = Array.from({ length: 7 }, (_, index) => ({
   isActive: index !== 4
 }));
 
+const drivers = [
+  { _id: 'driver-available', user: { _id: 'user-driver-available', name: 'Asha Driver' }, licenseNumber: 'DL-101', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'available', currentDelivery: null, isActive: true },
+  { _id: 'driver-busy', user: { _id: 'user-driver-busy', name: 'Rohan Driver' }, licenseNumber: 'DL-102', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'busy', currentDelivery: 'delivery-1', isActive: true },
+  { _id: 'driver-offline', user: { _id: 'user-driver-offline', name: 'Neha Driver' }, licenseNumber: 'DL-103', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'offline', currentDelivery: null, isActive: true },
+];
+
 beforeEach(() => {
   api.get.mockReset().mockImplementation((path) => {
-    if (path === '/drivers') return Promise.resolve({ data: { data: [] } });
+    if (path === '/drivers') return Promise.resolve({ data: { data: drivers } });
     if (path === '/vehicles') return Promise.resolve({ data: { data: [] } });
     if (path.startsWith('/users?')) {
       const query = new URLSearchParams(path.split('?')[1]);
@@ -40,6 +46,17 @@ beforeEach(() => {
 afterEach(cleanup);
 
 describe('resource account directory', () => {
+  it('shows clear driver status labels without changing the stored values', async () => {
+    render(<ResourcesPage />);
+
+    expect(await screen.findByRole('combobox', { name: 'Availability for Asha Driver' })).toHaveDisplayValue('Available');
+    expect(screen.getByRole('combobox', { name: 'Availability for Rohan Driver' })).toHaveDisplayValue('On delivery');
+    expect(screen.getByRole('combobox', { name: 'Availability for Neha Driver' })).toHaveDisplayValue('Unavailable');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Add staff account' }));
+    expect(screen.getByRole('combobox', { name: 'Starting status' })).toHaveDisplayValue('Unavailable');
+  });
+
   it('keeps the staff form out of the way until the admin opens it', async () => {
     render(<ResourcesPage />);
 
@@ -71,7 +88,7 @@ describe('resource account directory', () => {
     expect(screen.queryByText('Maya Driver')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: /Next/i }));
 
-    expect(await screen.findByText('Maya Driver')).toBeInTheDocument();
+    expect(await screen.findByText('Maya Driver', {}, { timeout: 3000 })).toBeInTheDocument();
     expect(api.get).toHaveBeenCalledWith('/users?page=2&limit=6');
     expect(screen.getByText('Page 2 of 2')).toBeInTheDocument();
   });

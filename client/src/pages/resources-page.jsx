@@ -5,6 +5,11 @@ import { useAuth } from '../context/auth-context.jsx';
 import { ErrorState, Loading, PageHeader, StatusBadge } from '../components/ui.jsx';
 
 const USER_PAGE_SIZE = 6;
+const DRIVER_STATUS_OPTIONS = [
+  { value: 'available', label: 'Available' },
+  { value: 'busy', label: 'On delivery' },
+  { value: 'offline', label: 'Unavailable' },
+];
 
 const emptyAccountForm = {
   name: '',
@@ -155,7 +160,7 @@ export default function ResourcesPage() {
         <div className="resource-list">{drivers.length ? drivers.map((driver) => <div className="resource-row" key={driver._id}>
           <span className="avatar">{driver.user.name.split(' ').map((word) => word[0]).slice(0, 2).join('')}</span>
           <div><strong>{driver.user.name}</strong><small>{driver.licenseNumber} · expires {new Intl.DateTimeFormat('en-IN', { month: 'short', year: 'numeric' }).format(new Date(driver.licenseExpiresAt))}</small></div>
-          <select disabled={Boolean(busyAction) || Boolean(driver.currentDelivery)} aria-label={`Availability for ${driver.user.name}`} value={driver.status} onChange={(event) => update(`/drivers/${driver._id}`, { status: event.target.value })}><option>available</option><option>busy</option><option>offline</option></select>
+          <select disabled={Boolean(busyAction) || Boolean(driver.currentDelivery)} aria-label={`Availability for ${driver.user.name}`} value={driver.status} onChange={(event) => update(`/drivers/${driver._id}`, { status: event.target.value })}>{DRIVER_STATUS_OPTIONS.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</select>
           {isAdmin && <button disabled={Boolean(busyAction) || Boolean(driver.currentDelivery)} className="text-button danger" onClick={() => update(`/drivers/${driver._id}`, { isActive: !driver.isActive }, `${driver.isActive ? 'Deactivate' : 'Activate'} ${driver.user.name}?`)}>{driver.isActive ? 'Deactivate' : 'Activate'}</button>}
         </div>) : <p className="resource-empty">No driver profiles yet.</p>}</div>
       </section>
@@ -184,7 +189,7 @@ export default function ResourcesPage() {
         {accountForm.role === 'driver' && <>
           <label>Licence number<input required value={accountForm.licenseNumber} onChange={(event) => setAccountForm({ ...accountForm, licenseNumber: event.target.value })}/></label>
           <label>Licence expiry<input required type="date" min={new Date().toISOString().slice(0, 10)} value={accountForm.licenseExpiresAt} onChange={(event) => setAccountForm({ ...accountForm, licenseExpiresAt: event.target.value })}/></label>
-          <label>Starting status<select value={accountForm.driverStatus} onChange={(event) => setAccountForm({ ...accountForm, driverStatus: event.target.value })}><option value="offline">Offline</option><option value="available">Available</option></select></label>
+          <label>Starting status<select value={accountForm.driverStatus} onChange={(event) => setAccountForm({ ...accountForm, driverStatus: event.target.value })}>{DRIVER_STATUS_OPTIONS.filter((status) => status.value !== 'busy').map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</select></label>
         </>}
         <button className="button account-create-button" disabled={Boolean(busyAction)}>{busyAction === 'create-account' ? 'Creating account…' : 'Create staff account'}</button>
       </form>}
