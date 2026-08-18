@@ -47,4 +47,18 @@ describe('driver availability control', () => {
     expect(screen.getByRole('button', { name: 'Unavailable' })).toBeDisabled();
     expect(api.patch).not.toHaveBeenCalled();
   });
+
+  it('shows Awaiting acceptance before the driver accepts the assignment', async () => {
+    api.get.mockImplementation((path) => {
+      if (path === '/deliveries?limit=6') return Promise.resolve({ data: { data: [] } });
+      if (path === '/drivers/me') return Promise.resolve({ data: { data: { ...profile, status: 'reserved', currentDelivery: { _id: 'delivery-1', trackingNumber: 'FF-1005', status: 'assigned' } } } });
+      return Promise.reject(new Error(`Unexpected request: ${path}`));
+    });
+    renderPage();
+
+    expect(await screen.findByText('Awaiting acceptance')).toBeInTheDocument();
+    expect(screen.getByText(/Accept or reject it before changing availability/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Available' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Unavailable' })).toBeDisabled();
+  });
 });

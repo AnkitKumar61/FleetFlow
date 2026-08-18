@@ -4,7 +4,7 @@ const driverSchema = new mongoose.Schema({
   user: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true, unique: true },
   licenseNumber: { type: String, required: true, unique: true, uppercase: true, trim: true },
   licenseExpiresAt: { type: Date, required: true },
-  status: { type: String, enum: ['available', 'busy', 'offline'], default: 'offline', index: true },
+  status: { type: String, enum: ['available', 'reserved', 'busy', 'offline'], default: 'offline', index: true },
   currentDelivery: { type: mongoose.Schema.Types.ObjectId, ref: 'Delivery', default: null },
   isActive: { type: Boolean, default: true, index: true }
 }, { timestamps: true });

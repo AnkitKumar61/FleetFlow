@@ -43,7 +43,7 @@ export default function DeliveryDetailPage() {
   };
 
   const loadResources = () => Promise.all([api.get('/drivers'), api.get('/vehicles')]).then(([driverData, vehicleData]) => {
-    setDrivers(driverData.data.data.filter((item) => item.isActive && item.status === 'available'));
+    setDrivers(driverData.data.data.filter((item) => item.user?.isActive && item.isActive && item.status === 'available' && !item.currentDelivery));
     setVehicles(vehicleData.data.data.filter((item) => item.isActive && item.status === 'available'));
   });
 

@@ -147,7 +147,7 @@ describe('delivery detail actions', () => {
       assignedVehicle: { _id: 'old-vehicle', registrationNumber: 'MH-12-OLD' }
     };
     api.get.mockImplementation((url) => {
-      if (url === '/drivers') return Promise.resolve({ data: { data: [{ _id: 'new-driver', isActive: true, status: 'available', user: { name: 'Replacement Driver' } }] } });
+      if (url === '/drivers') return Promise.resolve({ data: { data: [{ _id: 'new-driver', isActive: true, status: 'available', currentDelivery: null, user: { name: 'Replacement Driver', isActive: true } }] } });
       if (url === '/vehicles') return Promise.resolve({ data: { data: [{ _id: 'new-vehicle', isActive: true, status: 'available', registrationNumber: 'MH-12-NEW', capacityKg: 50 }] } });
       return Promise.resolve({ data: { data: assignedDelivery } });
     });

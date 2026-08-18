@@ -19,10 +19,10 @@ const accounts = Array.from({ length: 7 }, (_, index) => ({
 }));
 
 const drivers = [
-  { _id: 'driver-available', user: { _id: 'user-driver-available', name: 'Asha Driver', role: 'driver' }, licenseNumber: 'DL-101', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'available', currentDelivery: null, isActive: true },
-  { _id: 'driver-busy', user: { _id: 'user-driver-busy', name: 'Rohan Driver', role: 'driver' }, licenseNumber: 'DL-102', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'busy', currentDelivery: { _id: 'delivery-1', trackingNumber: 'FF-1005', status: 'in_transit' }, isActive: true },
-  { _id: 'driver-offline', user: { _id: 'user-driver-offline', name: 'Neha Driver', role: 'driver' }, licenseNumber: 'DL-103', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'offline', currentDelivery: null, isActive: true },
-  { _id: 'driver-former', user: { _id: 'user-driver-former', name: 'Former Driver', role: 'customer' }, licenseNumber: 'DL-104', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'offline', currentDelivery: null, isActive: false },
+  { _id: 'driver-available', user: { _id: 'user-driver-available', name: 'Asha Driver', role: 'driver', isActive: true }, licenseNumber: 'DL-101', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'available', currentDelivery: null, isActive: true },
+  { _id: 'driver-busy', user: { _id: 'user-driver-busy', name: 'Rohan Driver', role: 'driver', isActive: true }, licenseNumber: 'DL-102', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'reserved', currentDelivery: { _id: 'delivery-1', trackingNumber: 'FF-1005', status: 'assigned' }, isActive: true },
+  { _id: 'driver-offline', user: { _id: 'user-driver-offline', name: 'Neha Driver', role: 'driver', isActive: true }, licenseNumber: 'DL-103', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'offline', currentDelivery: null, isActive: true },
+  { _id: 'driver-former', user: { _id: 'user-driver-former', name: 'Former Driver', role: 'customer', isActive: true }, licenseNumber: 'DL-104', licenseExpiresAt: '2028-12-31T00:00:00.000Z', status: 'offline', currentDelivery: null, isActive: false },
 ];
 
 beforeEach(() => {
@@ -54,7 +54,8 @@ describe('resource account directory', () => {
     renderPage();
 
     expect(await screen.findByRole('combobox', { name: 'Availability for Asha Driver' })).toHaveDisplayValue('Available');
-    expect(screen.getByRole('combobox', { name: 'Availability for Rohan Driver' })).toHaveDisplayValue('On delivery');
+    expect(screen.queryByRole('combobox', { name: 'Availability for Rohan Driver' })).not.toBeInTheDocument();
+    expect(screen.getByText('Awaiting acceptance')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Availability for Neha Driver' })).toHaveDisplayValue('Unavailable');
     expect(screen.queryByRole('combobox', { name: 'Availability for Former Driver' })).not.toBeInTheDocument();
 
@@ -78,8 +79,9 @@ describe('resource account directory', () => {
 
     const lockedRole = await screen.findByRole('combobox', { name: 'Role for Rohan Driver' });
     expect(lockedRole).toBeDisabled();
-    expect(screen.getByText('Role locked')).toBeInTheDocument();
-    expect(screen.getByText('Role cannot be changed because this driver has an active delivery.')).toBeInTheDocument();
+    expect(screen.getByText('Assignment lock')).toBeInTheDocument();
+    expect(screen.getByText('Role and deactivation are locked while this driver has an active assignment.')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Deactivate' })[0]).toBeDisabled();
     expect(screen.getByRole('link', { name: 'View FF-1005' })).toHaveAttribute('href', '/deliveries/delivery-1');
     expect(screen.getByRole('combobox', { name: 'Role for Asha Driver' })).toBeEnabled();
   });

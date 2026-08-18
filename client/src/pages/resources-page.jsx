@@ -9,9 +9,16 @@ import { PhoneVerificationFields } from '../components/phone-verification-fields
 const USER_PAGE_SIZE = 6;
 const DRIVER_STATUS_OPTIONS = [
   { value: 'available', label: 'Available' },
-  { value: 'busy', label: 'On delivery' },
   { value: 'offline', label: 'Unavailable' },
 ];
+
+function driverOperationalState(driver) {
+  if (!driver.user?.isActive || !driver.isActive) return { value: 'inactive', label: 'Inactive', locked: true };
+  const deliveryStatus = typeof driver.currentDelivery === 'object' ? driver.currentDelivery?.status : null;
+  if (deliveryStatus === 'assigned' || driver.status === 'reserved') return { value: 'reserved', label: 'Awaiting acceptance', locked: true };
+  if (driver.currentDelivery || driver.status === 'busy') return { value: 'busy', label: 'On delivery', locked: true };
+  return { value: driver.status, label: driver.status === 'available' ? 'Available' : 'Unavailable', locked: false };
+}
 
 const emptyAccountForm = {
   name: '',
@@ -172,13 +179,18 @@ export default function ResourcesPage() {
     {actionSuccess && <p className="form-success action-error" role="status">{actionSuccess}</p>}
     <div className="resources-grid">
       <section className="panel">
-        <div className="panel-heading"><div><h2>Drivers</h2><p>{visibleDrivers.filter((driver) => driver.isActive && driver.status === 'available').length} available now</p></div></div>
-        <div className="resource-list">{visibleDrivers.length ? visibleDrivers.map((driver) => <div className="resource-row" key={driver._id}>
-          <span className="avatar">{driver.user.name.split(' ').map((word) => word[0]).slice(0, 2).join('')}</span>
-          <div><strong>{driver.user.name}</strong><small>{driver.licenseNumber} · expires {new Intl.DateTimeFormat('en-IN', { month: 'short', year: 'numeric' }).format(new Date(driver.licenseExpiresAt))}</small></div>
-          <select disabled={Boolean(busyAction) || Boolean(driver.currentDelivery)} aria-label={`Availability for ${driver.user.name}`} value={driver.status} onChange={(event) => update(`/drivers/${driver._id}`, { status: event.target.value })}>{DRIVER_STATUS_OPTIONS.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</select>
-          {isAdmin && <button disabled={Boolean(busyAction) || Boolean(driver.currentDelivery)} className="text-button danger" onClick={() => update(`/drivers/${driver._id}`, { isActive: !driver.isActive }, `${driver.isActive ? 'Deactivate' : 'Activate'} ${driver.user.name}?`)}>{driver.isActive ? 'Deactivate' : 'Activate'}</button>}
-        </div>) : <p className="resource-empty">No active driver accounts yet.</p>}</div>
+        <div className="panel-heading"><div><h2>Drivers</h2><p>{visibleDrivers.filter((driver) => driver.user?.isActive && driver.isActive && driver.status === 'available' && !driver.currentDelivery).length} available now</p></div></div>
+        <div className="resource-list">{visibleDrivers.length ? visibleDrivers.map((driver) => {
+          const operationalState = driverOperationalState(driver);
+          return <div className="resource-row" key={driver._id}>
+            <span className="avatar">{driver.user.name.split(' ').map((word) => word[0]).slice(0, 2).join('')}</span>
+            <div><strong>{driver.user.name}</strong><small>{driver.licenseNumber} · expires {new Intl.DateTimeFormat('en-IN', { month: 'short', year: 'numeric' }).format(new Date(driver.licenseExpiresAt))}</small></div>
+            {operationalState.locked
+              ? <span className={`status status--${operationalState.value}`}>{operationalState.label}</span>
+              : <select disabled={Boolean(busyAction)} aria-label={`Availability for ${driver.user.name}`} value={driver.status} onChange={(event) => update(`/drivers/${driver._id}`, { status: event.target.value })}>{DRIVER_STATUS_OPTIONS.map((status) => <option key={status.value} value={status.value}>{status.label}</option>)}</select>}
+            {isAdmin && <button disabled={Boolean(busyAction) || Boolean(driver.currentDelivery) || !driver.user?.isActive} className="text-button danger" onClick={() => update(`/drivers/${driver._id}`, { isActive: !driver.isActive }, `${driver.isActive ? 'Disable assignments for' : 'Enable assignments for'} ${driver.user.name}?`)}>{driver.isActive ? 'Disable assignments' : 'Enable assignments'}</button>}
+          </div>;
+        }) : <p className="resource-empty">No active driver accounts yet.</p>}</div>
       </section>
 
       <section className="panel">
@@ -220,7 +232,7 @@ export default function ResourcesPage() {
       {directoryError ? <div className="directory-error"><p>{directoryError}</p><button type="button" className="text-button" onClick={() => loadUsers()}>Try again</button></div> : users.length ? <div className="resource-list" aria-busy={directoryLoading}>{users.map((account) => {
         const driverProfile = driverByUserId.get(account._id);
         const activeDelivery = driverProfile?.currentDelivery;
-        const roleLocked = account.role === 'driver' && Boolean(activeDelivery || driverProfile?.status === 'busy');
+        const roleLocked = account.role === 'driver' && Boolean(activeDelivery || ['reserved', 'busy'].includes(driverProfile?.status));
         const deliveryId = typeof activeDelivery === 'object' ? activeDelivery?._id : activeDelivery;
         const trackingNumber = typeof activeDelivery === 'object' ? activeDelivery?.trackingNumber : null;
         const roleLockId = `role-lock-${account._id}`;
@@ -231,14 +243,14 @@ export default function ResourcesPage() {
           <div className="account-role-control">
             <select disabled={Boolean(busyAction) || account._id === user._id || roleLocked} aria-label={`Role for ${account.name}`} aria-describedby={roleLocked ? roleLockId : undefined} value={account.role} onChange={(event) => changeAccountRole(account, event.target.value)}><option value="admin">Admin</option><option value="driver" disabled={!driverProfile}>Driver</option><option value="customer">Customer</option></select>
             {roleLocked && <div className="role-lock-note" id={roleLockId}>
-              <span className="role-lock-label"><LockKeyhole aria-hidden="true"/> Role locked</span>
-              <span>Role cannot be changed because this driver has an active delivery.</span>
+              <span className="role-lock-label"><LockKeyhole aria-hidden="true"/> Assignment lock</span>
+              <span>Role and deactivation are locked while this driver has an active assignment.</span>
               {deliveryId && <Link to={`/deliveries/${deliveryId}`}>View {trackingNumber ?? 'delivery'}</Link>}
             </div>}
           </div>
           <div className="account-row-actions">
             <Link className="button button--secondary" to={`/resources/users/${account._id}`}>View details</Link>
-            <button className="button button--secondary" disabled={Boolean(busyAction) || account._id === user._id} onClick={() => update(`/users/${account._id}`, { isActive: !account.isActive }, `${account.isActive ? 'Deactivate' : 'Activate'} ${account.name}?`)}>{account.isActive ? 'Deactivate' : 'Activate'}</button>
+            <button className="button button--secondary" aria-describedby={roleLocked ? roleLockId : undefined} disabled={Boolean(busyAction) || account._id === user._id || (account.isActive && roleLocked)} onClick={() => update(`/users/${account._id}`, { isActive: !account.isActive }, `${account.isActive ? 'Deactivate' : 'Activate'} ${account.name}?`)}>{account.isActive ? 'Deactivate' : 'Activate'}</button>
           </div>
         </div>;
       })}</div> : !directoryLoading && <div className="account-directory-empty"><Search /><h3>No matching accounts</h3><p>Change or clear the filters to see more people.</p></div>}

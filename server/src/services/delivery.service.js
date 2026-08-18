@@ -198,7 +198,7 @@ export async function assignDelivery(deliveryId, input, actor, requestId) {
       if (!delivery) throw new AppError(409, 'DELIVERY_NOT_ASSIGNABLE', 'Delivery is no longer available for assignment');
       const driver = await Driver.findOneAndUpdate(
         { _id: input.driverId, isActive: true, status: 'available', currentDelivery: null, licenseExpiresAt: { $gt: new Date() } },
-        { status: 'busy', currentDelivery: delivery._id }, { new: true, session }
+        { status: 'reserved', currentDelivery: delivery._id }, { new: true, session }
       );
       if (!driver) throw new AppError(409, 'DRIVER_UNAVAILABLE', 'The selected driver is no longer available');
       if (!(await User.exists({ _id: driver.user, role: 'driver', isActive: true }).session(session))) {
@@ -244,7 +244,7 @@ export async function rejectAssignment(deliveryId, input, actor, requestId) {
       const previousVehicleId = delivery.assignedVehicle;
       const releasedDriver = await Driver.findOneAndUpdate(
         { _id: previousDriverId, currentDelivery: delivery._id },
-        { status: 'available', currentDelivery: null },
+        { status: 'offline', currentDelivery: null },
         { new: true, session }
       );
       const releasedVehicle = await Vehicle.findOneAndUpdate(
@@ -329,7 +329,7 @@ export async function reassignDelivery(deliveryId, input, actor, requestId) {
 
       const previousDriver = await Driver.findOneAndUpdate(
         { _id: previousDriverId, currentDelivery: delivery._id },
-        { status: 'available', currentDelivery: null },
+        { status: 'offline', currentDelivery: null },
         { new: true, session }
       );
       const previousVehicle = await Vehicle.findOneAndUpdate(
@@ -343,7 +343,7 @@ export async function reassignDelivery(deliveryId, input, actor, requestId) {
 
       const newDriver = await Driver.findOneAndUpdate(
         { _id: newDriverId, isActive: true, status: 'available', currentDelivery: null, licenseExpiresAt: { $gt: new Date() } },
-        { status: 'busy', currentDelivery: delivery._id },
+        { status: 'reserved', currentDelivery: delivery._id },
         { new: true, session }
       );
       if (!newDriver) throw new AppError(409, 'DRIVER_UNAVAILABLE', 'The selected replacement driver is no longer available');
@@ -420,15 +420,31 @@ export async function transitionDelivery(deliveryId, input, actor, requestId) {
   const delivery = await getAuthorizedDelivery(deliveryId, actor);
   const assignedDriver = delivery.assignedDriver;
   const previousStatus = delivery.status;
+  let acceptedDriver = null;
   const roles = transitionRules[delivery.status]?.[input.status];
   if (!roles?.includes(actor.role)) throw new AppError(409, 'INVALID_STATUS_TRANSITION', `Cannot move a delivery from ${delivery.status} to ${input.status}`);
+  if (input.status === DELIVERY_STATUS.ACCEPTED) {
+    acceptedDriver = await Driver.findOneAndUpdate(
+      { _id: assignedDriver, currentDelivery: delivery._id, isActive: true, status: { $in: ['reserved', 'busy'] } },
+      { status: 'busy' },
+      { new: true }
+    );
+    if (!acceptedDriver) throw new AppError(409, 'DRIVER_ASSIGNMENT_CHANGED', 'Your assignment changed. Refresh and try again');
+  }
   delivery.status = input.status;
   if (['delivered', 'failed', 'cancelled', 'rescheduled'].includes(input.status) && delivery.liveLocation) {
     delivery.liveLocation.sharing = false;
     delivery.liveLocation.updatedAt = new Date();
   }
   delivery.history.push({ status: input.status, actor: actor._id, note: input.note });
-  await delivery.save();
+  try {
+    await delivery.save();
+  } catch (error) {
+    if (acceptedDriver) {
+      await Driver.updateOne({ _id: acceptedDriver._id, currentDelivery: delivery._id, status: 'busy' }, { status: 'reserved' }).catch(() => {});
+    }
+    throw error;
+  }
   if (['delivered', 'failed', 'cancelled', 'rescheduled'].includes(input.status)) await releaseResources(delivery);
   if (input.status === DELIVERY_STATUS.RESCHEDULED) {
     delivery.assignedDriver = null;
@@ -442,7 +458,7 @@ export async function transitionDelivery(deliveryId, input, actor, requestId) {
 
 async function releaseResources(delivery) {
   await Promise.all([
-    delivery.assignedDriver && Driver.updateOne({ _id: delivery.assignedDriver, currentDelivery: delivery._id }, { status: 'available', currentDelivery: null }),
+    delivery.assignedDriver && Driver.updateOne({ _id: delivery.assignedDriver, currentDelivery: delivery._id }, { status: 'offline', currentDelivery: null }),
     delivery.assignedVehicle && Vehicle.updateOne({ _id: delivery.assignedVehicle, currentDelivery: delivery._id }, { status: 'available', currentDelivery: null })
   ]);
 }

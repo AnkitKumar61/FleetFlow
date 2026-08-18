@@ -2,9 +2,16 @@ import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { ArrowLeft, BadgeCheck, CircleUserRound, Truck } from 'lucide-react';
 import { api } from '../lib/api.js';
-import { ErrorState, Loading, PageHeader, StatusBadge } from '../components/ui.jsx';
+import { ErrorState, Loading, PageHeader } from '../components/ui.jsx';
 
-const driverStatusLabel = { available: 'Available', busy: 'On delivery', offline: 'Unavailable' };
+const driverStatusLabel = { available: 'Available', reserved: 'Awaiting acceptance', busy: 'On delivery', offline: 'Unavailable' };
+
+function operationalDriverState(account, driver) {
+  if (!account.isActive || !driver.isActive) return { value: 'inactive', label: 'Inactive' };
+  if (driver.currentDelivery?.status === 'assigned' || driver.status === 'reserved') return { value: 'reserved', label: 'Awaiting acceptance' };
+  if (driver.currentDelivery || driver.status === 'busy') return { value: 'busy', label: 'On delivery' };
+  return { value: driver.status, label: driverStatusLabel[driver.status] ?? driver.status };
+}
 
 function Field({ label, value, note }) {
   return <div><dt>{label}</dt><dd>{value || 'Not provided'}{note && <small>{note}</small>}</dd></div>;
@@ -31,6 +38,7 @@ export default function AccountDetailPage() {
   if (!details) return <Loading/>;
 
   const { account, driver, deliverySummary } = details;
+  const driverState = driver ? operationalDriverState(account, driver) : null;
   return <>
     <PageHeader title={account.name} description={`${account.role} account · Added ${formatDate(account.createdAt)}`} action={<span className={`account-state account-state--${account.isActive ? 'active' : 'inactive'}`}>{account.isActive ? 'Active' : 'Inactive'}</span>}/>
     <Link className="account-detail-back" to="/resources"><ArrowLeft/> Back to resource board</Link>
@@ -52,7 +60,7 @@ export default function AccountDetailPage() {
         {driver ? <dl className="account-detail-list">
           <Field label="Licence number" value={driver.licenseNumber}/>
           <Field label="Licence expiry" value={formatDate(driver.licenseExpiresAt)}/>
-          <div><dt>Availability</dt><dd><StatusBadge status={driver.status}/><small>{driverStatusLabel[driver.status] ?? driver.status}</small></dd></div>
+          <div><dt>Availability</dt><dd><span className={`status status--${driverState.value}`}>{driverState.label}</span></dd></div>
           <Field label="Driver profile" value={driver.isActive ? 'Active' : 'Inactive'}/>
           <div><dt>Current delivery</dt><dd>{driver.currentDelivery ? <Link to={`/deliveries/${driver.currentDelivery._id}`}>{driver.currentDelivery.trackingNumber}</Link> : 'No active delivery'}</dd></div>
         </dl> : <p className="account-detail-empty">This account does not have a driver profile.</p>}

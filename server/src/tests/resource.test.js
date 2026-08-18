@@ -189,6 +189,39 @@ describe('resource management invariants', () => {
     expect(await AuditLog.findOne({ entityId: driverUser._id, action: 'user.role_changed' })).toBeNull();
   });
 
+  it('blocks account deactivation while a driver has an active assignment', async () => {
+    const driverUser = await User.create({ name: 'Active Delivery Driver', email: 'active-delivery-driver@example.com', role: 'driver', passwordHash: 'unused' });
+    const profile = await Driver.create({ user: driverUser._id, licenseNumber: 'ACTIVE-DELIVERY', licenseExpiresAt: new Date(Date.now() + 86400000), status: 'reserved', currentDelivery: admin._id });
+
+    const response = await request(app).patch(`/api/v1/users/${driverUser._id}`).set('Authorization', `Bearer ${token}`).send({ isActive: false }).expect(409);
+
+    expect(response.body.error.code).toBe('DRIVER_ACTIVE_DELIVERY');
+    expect((await User.findById(driverUser._id)).isActive).toBe(true);
+    expect((await Driver.findById(profile._id)).status).toBe('reserved');
+  });
+
+  it('synchronizes driver account deactivation and safe reactivation', async () => {
+    const driverUser = await User.create({ name: 'Account State Driver', email: 'account-state-driver@example.com', phone: '+919876543245', phoneVerifiedAt: new Date(), role: 'driver', passwordHash: 'unused' });
+    const profile = await Driver.create({ user: driverUser._id, licenseNumber: 'ACCOUNT-STATE', licenseExpiresAt: new Date(Date.now() + 86400000), status: 'available' });
+
+    await request(app).patch(`/api/v1/users/${driverUser._id}`).set('Authorization', `Bearer ${token}`).send({ isActive: false }).expect(200);
+    expect((await User.findById(driverUser._id)).isActive).toBe(false);
+    expect(await Driver.findById(profile._id)).toMatchObject({ isActive: false, status: 'offline', currentDelivery: null });
+
+    await request(app).patch(`/api/v1/users/${driverUser._id}`).set('Authorization', `Bearer ${token}`).send({ isActive: true }).expect(200);
+    expect((await User.findById(driverUser._id)).isActive).toBe(true);
+    expect(await Driver.findById(profile._id)).toMatchObject({ isActive: true, status: 'offline', currentDelivery: null });
+    expect(await AuditLog.countDocuments({ entityId: driverUser._id, action: { $in: ['user.deactivated', 'user.activated'] } })).toBe(2);
+  });
+
+  it('does not let an admin manually set On delivery', async () => {
+    const driverUser = await User.create({ name: 'Manual Status Driver', email: 'manual-status-driver@example.com', role: 'driver', passwordHash: 'unused' });
+    const profile = await Driver.create({ user: driverUser._id, licenseNumber: 'MANUAL-STATUS', licenseExpiresAt: new Date(Date.now() + 86400000), status: 'offline' });
+
+    await request(app).patch(`/api/v1/drivers/${profile._id}`).set('Authorization', `Bearer ${token}`).send({ status: 'busy' }).expect(422);
+    expect((await Driver.findById(profile._id)).status).toBe('offline');
+  });
+
   it('deactivates a former driver atomically and safely reactivates a valid profile', async () => {
     const driverUser = await User.create({
       name: 'Role Driver', email: 'role-driver@example.com', phone: '+919876543230', phoneVerifiedAt: new Date(), role: 'driver', passwordHash: 'unused'

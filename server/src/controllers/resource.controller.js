@@ -120,6 +120,7 @@ export async function updateUser(req, res) {
 
       const previousRole = user.role;
       const nextRole = req.body.role ?? previousRole;
+      const previousAccountActive = user.isActive;
       let driver = null;
       let oldDriverValues = null;
       let newDriverValues = null;
@@ -129,7 +130,7 @@ export async function updateUser(req, res) {
         if (!driver) throw new AppError(409, 'DRIVER_PROFILE_REQUIRED', 'A driver profile with licence details is required');
         oldDriverValues = { driverStatus: driver.status, driverIsActive: driver.isActive };
 
-        if (driver.currentDelivery || driver.status === 'busy') {
+        if (driver.currentDelivery || ['reserved', 'busy'].includes(driver.status)) {
           throw new AppError(409, 'DRIVER_ACTIVE_DELIVERY', 'Complete or reassign the active delivery before changing this role');
         }
 
@@ -141,6 +142,32 @@ export async function updateUser(req, res) {
           if (driver.licenseExpiresAt <= new Date()) throw new AppError(409, 'DRIVER_LICENCE_EXPIRED', 'Renew the driver licence before changing the role to Driver');
           driver.status = 'offline';
           driver.isActive = true;
+        }
+        await driver.save({ session });
+        newDriverValues = { driverStatus: driver.status, driverIsActive: driver.isActive };
+      }
+
+      if (Object.hasOwn(req.body, 'isActive') && req.body.isActive !== previousAccountActive && nextRole === 'driver') {
+        driver ??= await Driver.findOne({ user: user._id }).session(session);
+        if (!driver) throw new AppError(409, 'DRIVER_PROFILE_REQUIRED', 'A driver profile with licence details is required');
+        oldDriverValues ??= { driverStatus: driver.status, driverIsActive: driver.isActive };
+
+        if (!req.body.isActive) {
+          if (driver.currentDelivery || ['reserved', 'busy'].includes(driver.status)) {
+            throw new AppError(409, 'DRIVER_ACTIVE_DELIVERY', 'Reassign or complete the active delivery before deactivating this driver');
+          }
+          driver.status = 'offline';
+          driver.isActive = false;
+        } else {
+          if (!user.phone || !user.phoneVerifiedAt) throw new AppError(409, 'VERIFIED_PHONE_REQUIRED', 'Verify the driver phone number before activating this account');
+          if (driver.licenseExpiresAt <= new Date()) throw new AppError(409, 'DRIVER_LICENCE_EXPIRED', 'Renew the driver licence before activating this account');
+          driver.isActive = true;
+          if (driver.currentDelivery) {
+            const activeDelivery = await Delivery.findById(driver.currentDelivery).select('status').session(session);
+            driver.status = activeDelivery?.status === 'assigned' ? 'reserved' : 'busy';
+          } else {
+            driver.status = 'offline';
+          }
         }
         await driver.save({ session });
         newDriverValues = { driverStatus: driver.status, driverIsActive: driver.isActive };
@@ -164,6 +191,20 @@ export async function updateUser(req, res) {
           session
         });
       }
+      if (Object.hasOwn(req.body, 'isActive') && req.body.isActive !== previousAccountActive) {
+        await recordAudit({
+          actor: req.user._id,
+          action: req.body.isActive ? 'user.activated' : 'user.deactivated',
+          entityType: 'User',
+          entityId: user._id,
+          metadata: {
+            oldValues: { isActive: previousAccountActive, ...(nextRole === 'driver' ? oldDriverValues : {}) },
+            newValues: { isActive: user.isActive, ...(nextRole === 'driver' ? newDriverValues : {}) }
+          },
+          requestId: req.id,
+          session
+        });
+      }
     });
   } finally {
     await session.endSession();
@@ -171,7 +212,7 @@ export async function updateUser(req, res) {
   return ok(res, updatedUser);
 }
 export async function listDrivers(_req, res) {
-  return ok(res, await Driver.find().populate('user', 'name email phone role').populate('currentDelivery', 'trackingNumber status').sort({ createdAt: -1 }));
+  return ok(res, await Driver.find().populate('user', 'name email phone role isActive').populate('currentDelivery', 'trackingNumber status').sort({ createdAt: -1 }));
 }
 export async function getMyDriver(req, res) {
   const driver = await Driver.findOne({ user: req.user._id })
@@ -225,10 +266,36 @@ export async function updateDriver(req, res) {
   if (Object.hasOwn(req.body, 'isActive') && req.user.role !== 'admin') throw new AppError(403, 'FORBIDDEN', 'Only an admin can activate or deactivate a driver');
   const current = await Driver.findById(req.params.id);
   if (!current) throw new AppError(404, 'DRIVER_NOT_FOUND', 'Driver not found');
-  if (current.currentDelivery && (req.body.isActive === false || (req.body.status && req.body.status !== 'busy'))) {
-    throw new AppError(409, 'DRIVER_ASSIGNED', 'An assigned driver cannot be deactivated or made available');
+  const account = await User.findById(current.user).select('role isActive phone phoneVerifiedAt');
+  if (!account || account.role !== 'driver') throw new AppError(409, 'DRIVER_ROLE_INVALID', 'This profile does not belong to a Driver account');
+  if ((current.currentDelivery || ['reserved', 'busy'].includes(current.status)) && (Object.hasOwn(req.body, 'status') || req.body.isActive === false)) {
+    throw new AppError(409, 'DRIVER_ASSIGNED', 'Availability and activation are locked while the driver has an assignment');
   }
-  const driver = await Driver.findByIdAndUpdate(req.params.id, req.body, { new: true, runValidators: true }).populate('user', 'name email phone');
+  if (req.body.isActive === true && !account.isActive) throw new AppError(409, 'DRIVER_ACCOUNT_INACTIVE', 'Activate the driver account before enabling assignments');
+  if (Object.hasOwn(req.body, 'status') && (!current.isActive || !account.isActive)) throw new AppError(409, 'DRIVER_INACTIVE', 'Activate the driver account and profile before changing availability');
+  if ((req.body.isActive === true || req.body.status === 'available') && (!account.phone || !account.phoneVerifiedAt)) {
+    throw new AppError(409, 'VERIFIED_PHONE_REQUIRED', 'Verify the driver phone number before enabling assignments');
+  }
+  if ((req.body.isActive === true || req.body.status === 'available') && current.licenseExpiresAt <= new Date()) {
+    throw new AppError(409, 'DRIVER_LICENCE_EXPIRED', 'Renew the driver licence before enabling assignments');
+  }
+
+  const changes = { ...req.body };
+  if (req.body.isActive === false || (req.body.isActive === true && !current.isActive)) changes.status = 'offline';
+  const driver = await Driver.findOneAndUpdate(
+    { _id: current._id, currentDelivery: null, status: current.status, isActive: current.isActive },
+    { $set: changes },
+    { new: true, runValidators: true }
+  ).populate('user', 'name email phone role isActive').populate('currentDelivery', 'trackingNumber status');
+  if (!driver) throw new AppError(409, 'DRIVER_STATUS_CHANGED', 'The driver assignment or status changed. Refresh and try again');
+  await recordAudit({
+    actor: req.user._id,
+    action: Object.hasOwn(req.body, 'isActive') ? (driver.isActive ? 'driver.activated' : 'driver.deactivated') : 'driver.availability_changed',
+    entityType: 'Driver',
+    entityId: driver._id,
+    metadata: { oldValues: { status: current.status, isActive: current.isActive }, newValues: { status: driver.status, isActive: driver.isActive } },
+    requestId: req.id
+  });
   return ok(res, driver);
 }
 export async function listVehicles(_req, res) { return ok(res, await Vehicle.find().sort({ createdAt: -1 })); }
