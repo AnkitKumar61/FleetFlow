@@ -34,6 +34,8 @@ describe('authentication', () => {
     expect(registered.body.data.user.phoneVerifiedAt).toBeTruthy();
     expect(registered.body.data.accessToken).toBeTruthy();
     expect(registered.headers['set-cookie'][0]).toContain('HttpOnly');
+    const capabilities = await request(app).get('/api/v1/system/capabilities').set('Authorization', `Bearer ${registered.body.data.accessToken}`).expect(200);
+    expect(capabilities.body.data).toEqual({ proofImageStorage: false });
     const login = await request(app).post('/api/v1/auth/login').send({ email: payload.email, password: payload.password }).expect(200);
     expect(login.body.data.accessToken).toBeTruthy();
   });

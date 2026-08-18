@@ -173,7 +173,9 @@ describe('delivery detail actions', () => {
 
   it('includes an optional proof image in the delivery completion form', async () => {
     user.role = 'driver';
-    api.get.mockResolvedValue({ data: { data: { ...delivery, status: 'in_transit', assignedDriver: { user: { name: 'Rohan Driver' } } } } });
+    api.get.mockImplementation((path) => path === '/system/capabilities'
+      ? Promise.resolve({ data: { data: { proofImageStorage: true } } })
+      : Promise.resolve({ data: { data: { ...delivery, status: 'in_transit', assignedDriver: { user: { name: 'Rohan Driver' } } } } }));
     api.post.mockResolvedValue({ data: { data: { ...delivery, status: 'delivered' } } });
     render(<MemoryRouter initialEntries={['/deliveries/delivery-id']}><Routes><Route path="/deliveries/:id" element={<DeliveryDetailPage />} /></Routes></MemoryRouter>);
 
@@ -187,6 +189,25 @@ describe('delivery detail actions', () => {
     expect(api.post.mock.calls[0][0]).toBe('/deliveries/delivery-id/proof');
     expect(form.get('image')).toBe(image);
     expect(form.get('recipientName')).toBe('Test Recipient');
+  });
+
+  it('disables photo proof but still completes delivery when image storage is unavailable', async () => {
+    user.role = 'driver';
+    api.get.mockImplementation((path) => path === '/system/capabilities'
+      ? Promise.resolve({ data: { data: { proofImageStorage: false } } })
+      : Promise.resolve({ data: { data: { ...delivery, status: 'in_transit', assignedDriver: { user: { name: 'Rohan Driver' } } } } }));
+    api.post.mockResolvedValue({ data: { data: { ...delivery, status: 'delivered' } } });
+    render(<MemoryRouter initialEntries={['/deliveries/delivery-id']}><Routes><Route path="/deliveries/:id" element={<DeliveryDetailPage />} /></Routes></MemoryRouter>);
+
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Recipient name' }), 'Test Recipient');
+    await userEvent.type(screen.getByRole('textbox', { name: 'Delivery OTP' }), '2468');
+    expect(screen.getByLabelText(/Proof image/i)).toBeDisabled();
+    expect(screen.getByText(/Photo proof is temporarily unavailable/i)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Submit proof & deliver' }));
+
+    const form = api.post.mock.calls[0][1];
+    expect(api.post.mock.calls[0][0]).toBe('/deliveries/delivery-id/proof');
+    expect(form.has('image')).toBe(false);
   });
 
   it('loads a short-lived proof image link for an authorized viewer', async () => {

@@ -34,6 +34,7 @@ export default function DeliveryDetailPage() {
   const [proof, setProof] = useState({ recipientName: '', otp: '', driverNotes: '' });
   const [proofImage, setProofImage] = useState(null);
   const [proofImageUrl, setProofImageUrl] = useState('');
+  const [proofImageStorage, setProofImageStorage] = useState(null);
 
   const load = () => {
     setLoadError('');
@@ -61,6 +62,19 @@ export default function DeliveryDetailPage() {
       window.removeEventListener('fleetflow:location-changed', updateLocation);
     };
   }, [id, user.role]);
+
+  useEffect(() => {
+    if (user.role !== 'driver') return undefined;
+    let active = true;
+    api.get('/system/capabilities')
+      .then((response) => {
+        if (active) setProofImageStorage(Boolean(response.data.data.proofImageStorage));
+      })
+      .catch(() => {
+        if (active) setProofImageStorage(false);
+      });
+    return () => { active = false; };
+  }, [user.role]);
 
   const transition = async (status) => {
     if (!confirm(`Move this delivery to ${labelStatus(status)}?`)) return;
@@ -127,6 +141,11 @@ export default function DeliveryDetailPage() {
 
   const submitProof = async (event) => {
     event.preventDefault();
+    if (proofImage && proofImageStorage !== true) {
+      setProofImage(null);
+      setActionError('Photo proof is unavailable right now. Submit again without an image.');
+      return;
+    }
     setBusyAction('proof');
     setActionError('');
     try {
@@ -137,7 +156,13 @@ export default function DeliveryDetailPage() {
       setProofImage(null);
       await load();
     } catch (error) {
-      setActionError(error.response?.data?.error?.message ?? 'Proof could not be submitted.');
+      if (error.response?.data?.error?.code === 'IMAGE_STORAGE_NOT_CONFIGURED') {
+        setProofImageStorage(false);
+        setProofImage(null);
+        setActionError('Photo proof is unavailable right now. Your delivery was not completed. Submit again without an image.');
+      } else {
+        setActionError(error.response?.data?.error?.message ?? 'Proof could not be submitted.');
+      }
     } finally {
       setBusyAction('');
     }
@@ -226,9 +251,9 @@ export default function DeliveryDetailPage() {
       <div><h2>Complete delivery</h2><p>Verify the recipient before releasing the assigned resources.</p></div>
       <label>Recipient name<input required minLength="2" value={proof.recipientName} onChange={(event) => setProof({ ...proof, recipientName: event.target.value })} /></label>
       <label>Delivery OTP<input required inputMode="numeric" pattern="[0-9]{4,8}" value={proof.otp} onChange={(event) => setProof({ ...proof, otp: event.target.value })} /></label>
-      <label>Driver notes<textarea maxLength="500" value={proof.driverNotes} onChange={(event) => setProof({ ...proof, driverNotes: event.target.value })} /></label>
-      <label>Proof image <span>Optional · JPEG, PNG, or WebP · 5 MB max</span><input type="file" accept="image/jpeg,image/png,image/webp" onChange={(event) => setProofImage(event.target.files[0] ?? null)} /></label>
-      <button className="button" disabled={Boolean(busyAction)}>{busyAction === 'proof' ? 'Submitting proof…' : 'Submit proof & deliver'}</button>
+      <label className="proof-notes-field">Driver notes<textarea maxLength="500" value={proof.driverNotes} onChange={(event) => setProof({ ...proof, driverNotes: event.target.value })} placeholder="Optional notes about the handover" /></label>
+      <label className="proof-image-field">Proof image <span id="proof-image-help">{proofImageStorage === null ? 'Checking secure image storage…' : proofImageStorage ? 'Optional · JPEG, PNG, or WebP · 5 MB max' : 'Photo proof is temporarily unavailable. OTP delivery can still be completed.'}</span><input type="file" accept="image/jpeg,image/png,image/webp" aria-describedby="proof-image-help" disabled={proofImageStorage !== true} onChange={(event) => setProofImage(event.target.files[0] ?? null)} /></label>
+      <div className="proof-submit"><button className="button" disabled={Boolean(busyAction)}>{busyAction === 'proof' ? 'Submitting proof…' : 'Submit proof & deliver'}</button></div>
     </form>}
     {delivery.proof?.image?.filePath && <section className="proof-evidence"><div><ImageIcon /><div><h2>Delivery evidence</h2><p>Stored privately in ImageKit. Access links expire after five minutes.</p></div></div><button className="button button--secondary" disabled={Boolean(busyAction)} onClick={toggleProofImage}>{busyAction === 'proof-image' ? 'Opening…' : proofImageUrl ? 'Hide proof image' : 'View proof image'}</button>{proofImageUrl && <img src={proofImageUrl} alt={`Delivery proof for ${delivery.trackingNumber}`} />}</section>}
     <section className="timeline"><h2>Delivery timeline</h2>{[...delivery.history].reverse().map((history, index) => <div className="timeline-event" key={`${history.at}-${index}`}><i /><div><strong>{labelStatus(history.status)}</strong><p>{history.note || 'Status updated'}</p><time>{new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(history.at))}</time></div></div>)}</section>

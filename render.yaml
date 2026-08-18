@@ -41,6 +41,10 @@ services:
         value: "7"
       - key: LOG_LEVEL
         value: info
+      - key: IMAGEKIT_PRIVATE_KEY
+        sync: false
+      - key: IMAGEKIT_URL_ENDPOINT
+        sync: false
       - key: UPLOAD_DIR
         value: /tmp/uploads
       - key: TRUST_PROXY

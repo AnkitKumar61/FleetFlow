@@ -6,8 +6,12 @@ import { AppError } from '../utils/app-error.js';
 const SIGNED_URL_SECONDS = 300;
 let client;
 
+export function isProofImageStorageConfigured() {
+  return Boolean(env.IMAGEKIT_PRIVATE_KEY && env.IMAGEKIT_URL_ENDPOINT);
+}
+
 function configuredClient() {
-  if (!env.IMAGEKIT_PRIVATE_KEY || !env.IMAGEKIT_URL_ENDPOINT) {
+  if (!isProofImageStorageConfigured()) {
     throw new AppError(503, 'IMAGE_STORAGE_NOT_CONFIGURED', 'Proof image storage is not configured');
   }
   client ??= new ImageKit({ privateKey: env.IMAGEKIT_PRIVATE_KEY, timeout: 20000, maxRetries: 2 });

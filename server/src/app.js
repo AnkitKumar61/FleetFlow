@@ -15,6 +15,8 @@ import { authenticate, authorize } from './middleware/auth.js';
 import { asyncHandler } from './utils/async-handler.js';
 import { overview } from './controllers/analytics.controller.js';
 import { notFound, errorHandler } from './middleware/error.js';
+import { isProofImageStorageConfigured } from './services/image-storage.service.js';
+import { ok } from './utils/api-response.js';
 
 export function createApp() {
   const app = express();
@@ -35,6 +37,9 @@ export function createApp() {
     res.status(mongo && redis ? 200 : 503).json({ status: mongo && redis ? 'ready' : 'degraded', dependencies: { mongo, redis } });
   });
   app.use('/api/v1/auth', authRouter);
+  app.get('/api/v1/system/capabilities', authenticate, (_req, res) => ok(res, {
+    proofImageStorage: isProofImageStorageConfigured()
+  }));
   app.use('/api/v1/deliveries', deliveryRouter);
   app.use('/api/v1', resourceRouter);
   app.get('/api/v1/analytics/overview', authenticate, authorize('admin'), asyncHandler(overview));
