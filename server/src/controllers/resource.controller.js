@@ -135,6 +135,46 @@ export async function updateUser(req, res) {
 export async function listDrivers(_req, res) {
   return ok(res, await Driver.find().populate('user', 'name email phone role').populate('currentDelivery', 'trackingNumber status').sort({ createdAt: -1 }));
 }
+export async function getMyDriver(req, res) {
+  const driver = await Driver.findOne({ user: req.user._id })
+    .populate('user', 'name email phone role')
+    .populate('currentDelivery', 'trackingNumber status');
+  if (!driver) throw new AppError(404, 'DRIVER_PROFILE_NOT_FOUND', 'Driver profile not found');
+  return ok(res, driver);
+}
+export async function updateMyAvailability(req, res) {
+  const current = await Driver.findOne({ user: req.user._id });
+  if (!current) throw new AppError(404, 'DRIVER_PROFILE_NOT_FOUND', 'Driver profile not found');
+  if (!current.isActive) throw new AppError(409, 'DRIVER_PROFILE_INACTIVE', 'Ask an admin to activate your driver profile');
+  if (current.currentDelivery || current.status === 'busy') {
+    throw new AppError(409, 'DRIVER_ASSIGNED', 'Availability cannot be changed while you have an active delivery');
+  }
+  if (req.body.status === 'available' && current.licenseExpiresAt <= new Date()) {
+    throw new AppError(409, 'DRIVER_LICENCE_EXPIRED', 'Renew your driver licence before becoming available');
+  }
+  if (current.status === req.body.status) {
+    await current.populate('user', 'name email phone role');
+    await current.populate('currentDelivery', 'trackingNumber status');
+    return ok(res, current);
+  }
+
+  const driver = await Driver.findOneAndUpdate(
+    { _id: current._id, isActive: true, currentDelivery: null, status: current.status },
+    { $set: { status: req.body.status } },
+    { new: true, runValidators: true }
+  ).populate('user', 'name email phone role').populate('currentDelivery', 'trackingNumber status');
+  if (!driver) throw new AppError(409, 'DRIVER_STATUS_CHANGED', 'Your delivery or availability changed. Refresh and try again');
+
+  await recordAudit({
+    actor: req.user._id,
+    action: 'driver.availability_changed',
+    entityType: 'Driver',
+    entityId: driver._id,
+    metadata: { oldValues: { status: current.status }, newValues: { status: driver.status } },
+    requestId: req.id
+  });
+  return ok(res, driver);
+}
 export async function createDriver(req, res) {
   const user = await User.findById(req.body.userId);
   if (!user) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');

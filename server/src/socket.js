@@ -22,7 +22,6 @@ export function attachSocketServer(httpServer) {
     socket.join(`user:${socket.user._id}`);
     socket.join(`role:${socket.user.role}`);
     if (socket.user.role === 'driver') {
-      await Driver.updateOne({ user: socket.user._id, status: 'offline' }, { status: 'available' });
       socket.driver = await Driver.findOne({ user: socket.user._id }).select('_id');
     }
     socket.on('delivery:watch', async (id, acknowledge = () => {}) => {
@@ -37,9 +36,6 @@ export function attachSocketServer(httpServer) {
         await socket.join(`delivery:${delivery._id}`);
         return acknowledge({ ok: true });
       } catch { return acknowledge({ ok: false, error: 'INVALID_DELIVERY' }); }
-    });
-    socket.on('disconnect', () => {
-      if (socket.user.role === 'driver') Driver.updateOne({ user: socket.user._id, status: 'available' }, { status: 'offline' }).catch(() => {});
     });
   });
   setRealtimeServer(io);

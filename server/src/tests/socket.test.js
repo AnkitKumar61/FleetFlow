@@ -41,6 +41,15 @@ const connect = (token) => new Promise((resolve, reject) => {
 const nextUpdate = (socket) => new Promise((resolve) => socket.once('delivery:updated', resolve));
 
 describe('Socket.IO delivery authorization', () => {
+  it('keeps the availability selected by a driver when their socket connects or disconnects', async () => {
+    const profile = await Driver.create({ user: users.driver._id, licenseNumber: 'SOCKET-AVAILABILITY', licenseExpiresAt: new Date(Date.now() + 86400000), status: 'offline' });
+    const driver = await connect(tokens.driver);
+    expect((await Driver.findById(profile._id)).status).toBe('offline');
+    driver.close();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect((await Driver.findById(profile._id)).status).toBe('offline');
+  });
+
   it('targets appropriate roles and rejects unauthorized room watches', async () => {
     const delivery = await Delivery.create({ trackingNumber: 'FF-SOCKET', customer: users.customer._id, pickupAddress: address, deliveryAddress: address, packageDescription: 'Socket package', packageWeightKg: 2, expectedDeliveryAt: new Date(Date.now() + 86400000), history: [{ status: 'pending', actor: users.customer._id }] });
     const [customer, other, driver, admin] = await Promise.all(Object.values(tokens).map(connect));

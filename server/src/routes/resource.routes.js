@@ -54,6 +54,8 @@ resourceRouter.post('/phone-verifications/verify', authorize('admin'), verificat
 resourceRouter.get('/users', authorize('admin'), validate({ query: userQuery }), asyncHandler(controller.listUsers));
 resourceRouter.post('/users', authorize('admin'), validate({ body: createUserBody }), asyncHandler(controller.createUser));
 resourceRouter.patch('/users/:id', authorize('admin'), validate({ params: id, body: z.object({ role: z.enum(['admin', 'driver', 'customer']).optional(), isActive: z.boolean().optional() }).refine((v) => Object.keys(v).length) }), asyncHandler(controller.updateUser));
+resourceRouter.get('/drivers/me', authorize('driver'), asyncHandler(controller.getMyDriver));
+resourceRouter.patch('/drivers/me/availability', authorize('driver'), validate({ body: z.object({ status: z.enum(['available', 'offline']) }) }), asyncHandler(controller.updateMyAvailability));
 resourceRouter.get('/drivers', authorize('admin'), asyncHandler(controller.listDrivers));
 resourceRouter.post('/drivers', authorize('admin'), validate({ body: z.object({ userId: z.string().regex(/^[a-f\d]{24}$/i), licenseNumber: z.string().min(3).max(30), licenseExpiresAt: z.coerce.date(), status: z.enum(['available', 'busy', 'offline']).default('offline') }) }), asyncHandler(controller.createDriver));
 resourceRouter.patch('/drivers/:id', authorize('admin'), validate({ params: id, body: z.object({ status: z.enum(['available', 'busy', 'offline']).optional(), isActive: z.boolean().optional(), licenseExpiresAt: z.coerce.date().optional() }) }), asyncHandler(controller.updateDriver));

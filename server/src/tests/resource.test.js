@@ -92,6 +92,34 @@ describe('resource management invariants', () => {
     }).expect(403);
   });
 
+  it('lets a driver control their own availability and records the change', async () => {
+    const driverUser = await User.create({ name: 'Self Service Driver', email: 'availability-driver@example.com', role: 'driver', passwordHash: await User.hashPassword('Password1') });
+    const profile = await Driver.create({ user: driverUser._id, licenseNumber: 'SELF-AVAILABILITY', licenseExpiresAt: new Date(Date.now() + 86400000), status: 'offline' });
+    const login = await request(app).post('/api/v1/auth/login').send({ email: driverUser.email, password: 'Password1' });
+    const driverToken = login.body.data.accessToken;
+
+    const ownProfile = await request(app).get('/api/v1/drivers/me').set('Authorization', `Bearer ${driverToken}`).expect(200);
+    expect(ownProfile.body.data._id).toBe(profile._id.toString());
+
+    const available = await request(app).patch('/api/v1/drivers/me/availability').set('Authorization', `Bearer ${driverToken}`).send({ status: 'available' }).expect(200);
+    expect(available.body.data.status).toBe('available');
+    expect((await Driver.findById(profile._id)).status).toBe('available');
+    const audit = await AuditLog.findOne({ actor: driverUser._id, action: 'driver.availability_changed' });
+    expect(audit.metadata.oldValues.status).toBe('offline');
+    expect(audit.metadata.newValues.status).toBe('available');
+  });
+
+  it('does not let a driver change availability during an active delivery', async () => {
+    const driverUser = await User.create({ name: 'Assigned Driver', email: 'assigned-availability@example.com', role: 'driver', passwordHash: await User.hashPassword('Password1') });
+    const profile = await Driver.create({ user: driverUser._id, licenseNumber: 'ASSIGNED-AVAILABILITY', licenseExpiresAt: new Date(Date.now() + 86400000), status: 'busy', currentDelivery: admin._id });
+    const login = await request(app).post('/api/v1/auth/login').send({ email: driverUser.email, password: 'Password1' });
+
+    const response = await request(app).patch('/api/v1/drivers/me/availability').set('Authorization', `Bearer ${login.body.data.accessToken}`).send({ status: 'offline' }).expect(409);
+    expect(response.body.error.code).toBe('DRIVER_ASSIGNED');
+    expect((await Driver.findById(profile._id)).status).toBe('busy');
+    expect(await AuditLog.findOne({ actor: driverUser._id, action: 'driver.availability_changed' })).toBeNull();
+  });
+
   it('keeps assigned drivers and vehicles reserved', async () => {
     const driverUser = await User.create({ name: 'Driver', email: 'driver@example.com', role: 'driver', passwordHash: 'unused' });
     const deliveryId = admin._id;
