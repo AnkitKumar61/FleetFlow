@@ -4,6 +4,7 @@ import { Driver } from '../models/driver.js';
 import { Vehicle } from '../models/vehicle.js';
 import { AuditLog } from '../models/audit-log.js';
 import { Notification } from '../models/notification.js';
+import { Delivery } from '../models/delivery.js';
 import { AppError } from '../utils/app-error.js';
 import { ok } from '../utils/api-response.js';
 import { recordAudit } from '../services/audit.service.js';
@@ -27,6 +28,43 @@ export async function listUsers(req, res) {
   return ok(res, {
     items,
     pagination: { page, limit, total, totalPages: Math.max(1, Math.ceil(total / limit)) }
+  });
+}
+export async function getUserDetails(req, res) {
+  const account = await User.findById(req.params.id).select('name email phone phoneVerifiedAt role isActive createdAt updatedAt');
+  if (!account) throw new AppError(404, 'USER_NOT_FOUND', 'User not found');
+
+  const [driver, totalDeliveries, activeDeliveries] = await Promise.all([
+    Driver.findOne({ user: account._id })
+      .select('licenseNumber licenseExpiresAt status currentDelivery isActive createdAt updatedAt')
+      .populate('currentDelivery', 'trackingNumber status'),
+    account.role === 'customer' ? Delivery.countDocuments({ customer: account._id }) : 0,
+    account.role === 'customer'
+      ? Delivery.countDocuments({ customer: account._id, status: { $in: ['pending', 'assigned', 'accepted', 'picked_up', 'in_transit', 'rescheduled'] } })
+      : 0
+  ]);
+
+  return ok(res, {
+    account: {
+      _id: account._id,
+      name: account.name,
+      email: account.email,
+      phone: account.phone ?? null,
+      phoneVerified: Boolean(account.phoneVerifiedAt),
+      role: account.role,
+      isActive: account.isActive,
+      createdAt: account.createdAt,
+      updatedAt: account.updatedAt
+    },
+    driver: driver ? {
+      _id: driver._id,
+      licenseNumber: driver.licenseNumber,
+      licenseExpiresAt: driver.licenseExpiresAt,
+      status: driver.status,
+      isActive: driver.isActive,
+      currentDelivery: driver.currentDelivery ?? null
+    } : null,
+    deliverySummary: account.role === 'customer' ? { total: totalDeliveries, active: activeDeliveries } : null
   });
 }
 export async function createUser(req, res) {

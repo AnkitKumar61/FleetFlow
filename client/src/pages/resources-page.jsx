@@ -236,7 +236,10 @@ export default function ResourcesPage() {
               {deliveryId && <Link to={`/deliveries/${deliveryId}`}>View {trackingNumber ?? 'delivery'}</Link>}
             </div>}
           </div>
-          <button className="button button--secondary" disabled={Boolean(busyAction) || account._id === user._id} onClick={() => update(`/users/${account._id}`, { isActive: !account.isActive }, `${account.isActive ? 'Deactivate' : 'Activate'} ${account.name}?`)}>{account.isActive ? 'Deactivate' : 'Activate'}</button>
+          <div className="account-row-actions">
+            <Link className="button button--secondary" to={`/resources/users/${account._id}`}>View details</Link>
+            <button className="button button--secondary" disabled={Boolean(busyAction) || account._id === user._id} onClick={() => update(`/users/${account._id}`, { isActive: !account.isActive }, `${account.isActive ? 'Deactivate' : 'Activate'} ${account.name}?`)}>{account.isActive ? 'Deactivate' : 'Activate'}</button>
+          </div>
         </div>;
       })}</div> : !directoryLoading && <div className="account-directory-empty"><Search /><h3>No matching accounts</h3><p>Change or clear the filters to see more people.</p></div>}
       <div className="directory-pagination"><span>{pagination.total} total {pagination.total === 1 ? 'account' : 'accounts'}</span><div><button type="button" className="button button--secondary" disabled={directoryLoading || pagination.page <= 1} onClick={() => setDirectoryPage((current) => current - 1)}><ArrowLeft /> Previous</button><button type="button" className="button button--secondary" disabled={directoryLoading || pagination.page >= pagination.totalPages} onClick={() => setDirectoryPage((current) => current + 1)}>Next <ArrowRight /></button></div></div>

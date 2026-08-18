@@ -5,6 +5,7 @@ import { api } from '../lib/api.js';
 import { useAuth } from '../context/auth-context.jsx';
 import { ErrorState, Loading, PageHeader, StatusBadge, labelStatus } from '../components/ui.jsx';
 import { LiveTrackingPanel } from '../components/live-tracking-panel.jsx';
+import { RelationshipDetails } from '../components/relationship-details.jsx';
 
 const nextDriverStatus = { assigned: 'accepted', accepted: 'picked_up', picked_up: 'in_transit' };
 const operationalTransitions = {
@@ -191,6 +192,7 @@ export default function DeliveryDetailPage() {
         <div><dt>Expected</dt><dd>{new Intl.DateTimeFormat('en-IN', { dateStyle: 'medium', timeStyle: 'short' }).format(new Date(delivery.expectedDeliveryAt))}</dd></div>
       </dl></aside>
     </section>
+    <RelationshipDetails delivery={delivery} role={user.role}/>
     {delivery.assignedDriver && (['assigned', 'accepted', 'picked_up', 'in_transit'].includes(delivery.status) || delivery.liveLocation) && <LiveTrackingPanel
       delivery={delivery}
       user={user}

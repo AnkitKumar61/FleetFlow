@@ -82,8 +82,8 @@ export async function getAuthorizedDelivery(id, user, options = {}) {
   let query = Delivery.findById(id);
   if (options.populate) {
     query = query
-      .populate('customer', 'name email')
-      .populate({ path: 'assignedDriver', populate: { path: 'user', select: 'name phone' } })
+      .populate('customer', 'name email phone phoneVerifiedAt')
+      .populate({ path: 'assignedDriver', populate: { path: 'user', select: 'name email phone phoneVerifiedAt' } })
       .populate('assignedVehicle');
   }
   const delivery = await query;
@@ -94,6 +94,99 @@ export async function getAuthorizedDelivery(id, user, options = {}) {
     if (!driver || (delivery.assignedDriver?._id ?? delivery.assignedDriver)?.toString() !== driver._id.toString()) throw new AppError(403, 'FORBIDDEN', 'You cannot access this delivery');
   }
   return delivery;
+}
+
+const ACTIVE_RELATIONSHIP_STATUSES = new Set([
+  DELIVERY_STATUS.ASSIGNED,
+  DELIVERY_STATUS.ACCEPTED,
+  DELIVERY_STATUS.PICKED_UP,
+  DELIVERY_STATUS.IN_TRANSIT
+]);
+
+function verifiedPhone(person) {
+  return person?.phoneVerifiedAt && person.phone ? person.phone : null;
+}
+
+export function presentAuthorizedDelivery(delivery, user) {
+  const result = delivery.toJSON();
+  const customer = delivery.customer;
+  const driverProfile = delivery.assignedDriver;
+  const driverUser = driverProfile?.user;
+  const vehicle = delivery.assignedVehicle;
+  const relationshipIsActive = ACTIVE_RELATIONSHIP_STATUSES.has(delivery.status);
+
+  result.customer = customer ? { _id: customer._id, name: customer.name } : null;
+  result.assignedDriver = driverProfile ? {
+    _id: driverProfile._id,
+    user: driverUser ? { _id: driverUser._id, name: driverUser.name } : null
+  } : null;
+  result.assignedVehicle = vehicle ? {
+    _id: vehicle._id,
+    registrationNumber: vehicle.registrationNumber,
+    type: vehicle.type,
+    capacityKg: vehicle.capacityKg
+  } : null;
+
+  if (user.role === 'admin') {
+    result.relationshipDetails = {
+      customer: customer ? {
+        name: customer.name,
+        email: customer.email,
+        phone: customer.phone ?? null,
+        phoneVerified: Boolean(customer.phoneVerifiedAt)
+      } : null,
+      recipient: {
+        name: delivery.deliveryAddress.contactName ?? null,
+        phone: delivery.deliveryAddress.contactPhone ?? null
+      },
+      driver: driverUser ? {
+        name: driverUser.name,
+        email: driverUser.email,
+        phone: driverUser.phone ?? null,
+        phoneVerified: Boolean(driverUser.phoneVerifiedAt)
+      } : null,
+      vehicle: vehicle ? {
+        registrationNumber: vehicle.registrationNumber,
+        type: vehicle.type,
+        capacityKg: vehicle.capacityKg
+      } : null
+    };
+  } else if (user.role === 'driver' && relationshipIsActive) {
+    result.relationshipDetails = {
+      customer: customer ? {
+        name: customer.name,
+        email: customer.email,
+        phone: verifiedPhone(customer),
+        phoneVerified: Boolean(customer.phoneVerifiedAt)
+      } : null,
+      recipient: {
+        name: delivery.deliveryAddress.contactName ?? null,
+        phone: delivery.deliveryAddress.contactPhone ?? null
+      }
+    };
+  } else if (user.role === 'customer' && relationshipIsActive) {
+    result.relationshipDetails = {
+      driver: driverUser ? {
+        name: driverUser.name,
+        phone: verifiedPhone(driverUser),
+        phoneVerified: Boolean(driverUser.phoneVerifiedAt)
+      } : null,
+      vehicle: vehicle ? {
+        registrationNumber: vehicle.registrationNumber,
+        type: vehicle.type
+      } : null
+    };
+  } else {
+    result.relationshipDetails = null;
+  }
+
+  if (user.role === 'driver' && !relationshipIsActive) {
+    delete result.pickupAddress.contactName;
+    delete result.pickupAddress.contactPhone;
+    delete result.deliveryAddress.contactName;
+    delete result.deliveryAddress.contactPhone;
+  }
+  return result;
 }
 
 export async function assignDelivery(deliveryId, input, actor, requestId) {

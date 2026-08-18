@@ -60,6 +60,47 @@ describe('delivery detail actions', () => {
     expect(screen.getByText('31 km/h')).toBeInTheDocument();
   });
 
+  it('shows assigned driver and vehicle details to the customer', async () => {
+    api.get.mockResolvedValue({ data: { data: {
+      ...delivery,
+      status: 'assigned',
+      assignedDriver: { user: { name: 'Rohan Driver' } },
+      assignedVehicle: { registrationNumber: 'MH-12-TEST' },
+      relationshipDetails: {
+        driver: { name: 'Rohan Driver', phone: '+919876543281', phoneVerified: true },
+        vehicle: { registrationNumber: 'MH-12-TEST', type: 'van' }
+      }
+    } } });
+    render(<MemoryRouter initialEntries={['/deliveries/delivery-id']}><Routes><Route path="/deliveries/:id" element={<DeliveryDetailPage />} /></Routes></MemoryRouter>);
+
+    expect(await screen.findByRole('heading', { name: 'People and resources' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Assigned driver' })).toBeInTheDocument();
+    expect(screen.getByText('+919876543281')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Assigned vehicle' })).toBeInTheDocument();
+    expect(screen.getAllByText('MH-12-TEST').length).toBeGreaterThan(0);
+  });
+
+  it('shows customer and recipient details to the assigned driver', async () => {
+    user.role = 'driver';
+    api.get.mockResolvedValue({ data: { data: {
+      ...delivery,
+      status: 'assigned',
+      assignedDriver: { user: { name: 'Rohan Driver' } },
+      assignedVehicle: { registrationNumber: 'MH-12-TEST' },
+      relationshipDetails: {
+        customer: { name: 'Customer', email: 'customer@example.com', phone: '+919876543282', phoneVerified: true },
+        recipient: { name: 'Priya Recipient', phone: '+919876543283' }
+      }
+    } } });
+    render(<MemoryRouter initialEntries={['/deliveries/delivery-id']}><Routes><Route path="/deliveries/:id" element={<DeliveryDetailPage />} /></Routes></MemoryRouter>);
+
+    expect(await screen.findByRole('heading', { name: 'Customer' })).toBeInTheDocument();
+    expect(screen.getByText('customer@example.com')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Recipient' })).toBeInTheDocument();
+    expect(screen.getByText('Priya Recipient')).toBeInTheDocument();
+    expect(screen.getByText('+919876543283')).toBeInTheDocument();
+  });
+
   it('keeps the last driver position visible after tracking ends', async () => {
     api.get.mockResolvedValue({ data: { data: {
       ...delivery,

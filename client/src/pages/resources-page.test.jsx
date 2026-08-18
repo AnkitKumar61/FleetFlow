@@ -66,6 +66,7 @@ describe('resource account directory', () => {
     renderPage();
 
     expect(await screen.findByRole('heading', { name: 'Account directory' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'View details' })[0]).toHaveAttribute('href', '/resources/users/user-driver-busy');
     expect(screen.queryByLabelText('Full name')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Add staff account' }));
     expect(screen.getByLabelText('Full name')).toBeInTheDocument();

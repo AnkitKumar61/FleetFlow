@@ -9,6 +9,7 @@ const DeliveriesPage = lazy(() => import('./pages/deliveries-page.jsx'));
 const DeliveryDetailPage = lazy(() => import('./pages/delivery-detail-page.jsx'));
 const NewDeliveryPage = lazy(() => import('./pages/new-delivery-page.jsx'));
 const ResourcesPage = lazy(() => import('./pages/resources-page.jsx'));
+const AccountDetailPage = lazy(() => import('./pages/account-detail-page.jsx'));
 const AuditLogPage = lazy(() => import('./pages/audit-log-page.jsx'));
 
 function Protected() {
@@ -33,6 +34,7 @@ export function App() {
       <Route path="deliveries/new" element={<RequireRoles roles={['customer']}><NewDeliveryPage /></RequireRoles>} />
       <Route path="deliveries/:id" element={<DeliveryDetailPage />} />
       <Route path="resources" element={<RequireRoles roles={['admin']}><ResourcesPage /></RequireRoles>} />
+      <Route path="resources/users/:id" element={<RequireRoles roles={['admin']}><AccountDetailPage /></RequireRoles>} />
       <Route path="audit" element={<RequireRoles roles={['admin']}><AuditLogPage /></RequireRoles>} />
     </Route>
     <Route path="*" element={<Navigate to="/" replace />} />

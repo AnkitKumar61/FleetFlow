@@ -52,6 +52,7 @@ const verificationLimiter = rateLimit({ windowMs: 15 * 60 * 1000, limit: 10, ski
 resourceRouter.post('/phone-verifications', authorize('admin'), verificationLimiter, validate({ body: startPhoneVerificationBody }), asyncHandler(phoneController.startStaff));
 resourceRouter.post('/phone-verifications/verify', authorize('admin'), verificationLimiter, validate({ body: verifyPhoneCodeBody }), asyncHandler(phoneController.verifyStaff));
 resourceRouter.get('/users', authorize('admin'), validate({ query: userQuery }), asyncHandler(controller.listUsers));
+resourceRouter.get('/users/:id/details', authorize('admin'), validate({ params: id }), asyncHandler(controller.getUserDetails));
 resourceRouter.post('/users', authorize('admin'), validate({ body: createUserBody }), asyncHandler(controller.createUser));
 resourceRouter.patch('/users/:id', authorize('admin'), validate({ params: id, body: z.object({ role: z.enum(['admin', 'driver', 'customer']).optional(), isActive: z.boolean().optional() }).refine((v) => Object.keys(v).length) }), asyncHandler(controller.updateUser));
 resourceRouter.get('/drivers/me', authorize('driver'), asyncHandler(controller.getMyDriver));

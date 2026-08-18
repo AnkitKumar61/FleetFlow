@@ -6,6 +6,7 @@ import { Driver } from '../models/driver.js';
 import { Vehicle } from '../models/vehicle.js';
 import { Notification } from '../models/notification.js';
 import { AuditLog } from '../models/audit-log.js';
+import { Delivery } from '../models/delivery.js';
 
 describe('resource management invariants', () => {
   const app = createApp();
@@ -60,6 +61,47 @@ describe('resource management invariants', () => {
     expect(response.body.data.items).toHaveLength(3);
     expect(response.body.data.items.every((item) => item.role === 'driver' && item.isActive)).toBe(true);
     expect(response.body.data.pagination).toEqual({ page: 2, limit: 5, total: 8, totalPages: 2 });
+  });
+
+  it('returns safe operational account details only to an admin', async () => {
+    const customer = await User.create({
+      name: 'Detail Customer', email: 'detail-customer@example.com', phone: '+919876543260',
+      phoneVerifiedAt: new Date(), role: 'customer', passwordHash: await User.hashPassword('Password1')
+    });
+    const address = { line1: '1 Detail Road', city: 'Pune', state: 'Maharashtra', postalCode: '411001' };
+    await Delivery.create({
+      trackingNumber: 'FF-DETAIL-CUSTOMER', customer: customer._id, pickupAddress: address, deliveryAddress: address,
+      packageDescription: 'Customer details test', packageWeightKg: 2, expectedDeliveryAt: new Date(Date.now() + 86400000),
+      history: [{ status: 'pending', actor: customer._id }]
+    });
+
+    const response = await request(app).get(`/api/v1/users/${customer._id}/details`).set('Authorization', `Bearer ${token}`).expect(200);
+    expect(response.body.data.account).toMatchObject({
+      name: 'Detail Customer', email: 'detail-customer@example.com', phone: '+919876543260', phoneVerified: true, role: 'customer'
+    });
+    expect(response.body.data.deliverySummary).toEqual({ total: 1, active: 1 });
+    expect(response.body.data.driver).toBeNull();
+    expect(JSON.stringify(response.body)).not.toMatch(/passwordHash|otpHash|verificationToken|refreshToken/i);
+
+    const login = await request(app).post('/api/v1/auth/login').send({ email: customer.email, password: 'Password1' });
+    await request(app).get(`/api/v1/users/${customer._id}/details`).set('Authorization', `Bearer ${login.body.data.accessToken}`).expect(403);
+  });
+
+  it('includes licence and current assignment in safe driver details', async () => {
+    const driverUser = await User.create({
+      name: 'Detail Driver', email: 'detail-driver@example.com', phone: '+919876543261', phoneVerifiedAt: new Date(),
+      role: 'driver', passwordHash: 'unused'
+    });
+    const driver = await Driver.create({
+      user: driverUser._id, licenseNumber: 'DETAIL-LICENCE', licenseExpiresAt: new Date(Date.now() + 86400000),
+      status: 'available'
+    });
+
+    const response = await request(app).get(`/api/v1/users/${driverUser._id}/details`).set('Authorization', `Bearer ${token}`).expect(200);
+    expect(response.body.data.driver).toMatchObject({
+      _id: driver._id.toString(), licenseNumber: 'DETAIL-LICENCE', status: 'available', isActive: true, currentDelivery: null
+    });
+    expect(response.body.data.deliverySummary).toBeNull();
   });
 
   it('requires customers to create their own account through sign up', async () => {

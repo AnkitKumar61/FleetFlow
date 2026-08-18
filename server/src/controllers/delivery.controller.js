@@ -6,7 +6,10 @@ export async function list(req, res) {
   const result = await deliveryService.listDeliveries(req.query, req.user);
   return ok(res, result.items, { nextCursor: result.nextCursor });
 }
-export async function get(req, res) { return ok(res, await deliveryService.getAuthorizedDelivery(req.params.id, req.user, { populate: true })); }
+export async function get(req, res) {
+  const delivery = await deliveryService.getAuthorizedDelivery(req.params.id, req.user, { populate: true });
+  return ok(res, deliveryService.presentAuthorizedDelivery(delivery, req.user));
+}
 export async function assign(req, res) { return ok(res, await deliveryService.assignDelivery(req.params.id, req.body, req.user, req.id)); }
 export async function reassign(req, res) { return ok(res, await deliveryService.reassignDelivery(req.params.id, req.body, req.user, req.id)); }
 export async function rejectAssignment(req, res) { return ok(res, await deliveryService.rejectAssignment(req.params.id, req.body, req.user, req.id)); }
